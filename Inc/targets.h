@@ -4453,36 +4453,42 @@
 
 #ifdef HARDWARE_GROUP_AT_B
 
-#define MCU_AT421
-#define USE_TIMER_3_CHANNEL_1
-#define INPUT_PIN GPIO_PINS_4
-#define INPUT_PIN_SOURCE GPIO_PINS_SOURCE4
-#define INPUT_PIN_PORT GPIOB
-#define IC_TIMER_CHANNEL TMR_SELECT_CHANNEL_1
-#define IC_TIMER_REGISTER TMR3
-#define INPUT_DMA_CHANNEL DMA1_CHANNEL4
-#define IC_DMA_IRQ_NAME DMA1_Channel5_4_IRQn
+// 芯片类型定义
+#define MCU_AT421                     // 使用AT32F421系列芯片
 
-#define PHASE_A_GPIO_LOW GPIO_PINS_1
-#define PHASE_A_PIN_SOURCE_LOW GPIO_PINS_SOURCE1
-#define PHASE_A_GPIO_PORT_LOW GPIOB
-#define PHASE_A_GPIO_HIGH GPIO_PINS_10
-#define PHASE_A_PIN_SOURCE_HIGH GPIO_PINS_SOURCE10
-#define PHASE_A_GPIO_PORT_HIGH GPIOA
+// 输入捕获配置
+#define USE_TIMER_3_CHANNEL_1         // 使用定时器3通道1作为输入捕获
+#define INPUT_PIN GPIO_PINS_4         // 输入捕获引脚：GPIOB.4
+#define INPUT_PIN_SOURCE GPIO_PINS_SOURCE4  // 输入捕获引脚源
+#define INPUT_PIN_PORT GPIOB          // 输入捕获引脚端口
+#define IC_TIMER_CHANNEL TMR_SELECT_CHANNEL_1  // 输入捕获定时器通道
+#define IC_TIMER_REGISTER TMR3        // 输入捕获定时器寄存器
+#define INPUT_DMA_CHANNEL DMA1_CHANNEL4  // 输入捕获DMA通道
+#define IC_DMA_IRQ_NAME DMA1_Channel5_4_IRQn  // 输入捕获DMA中断名称
 
-#define PHASE_B_GPIO_LOW GPIO_PINS_0
-#define PHASE_B_PIN_SOURCE_LOW GPIO_PINS_SOURCE0
-#define PHASE_B_GPIO_PORT_LOW GPIOB
-#define PHASE_B_GPIO_HIGH GPIO_PINS_9
-#define PHASE_B_PIN_SOURCE_HIGH GPIO_PINS_SOURCE9
-#define PHASE_B_GPIO_PORT_HIGH GPIOA
+// A相驱动引脚配置
+#define PHASE_A_GPIO_LOW GPIO_PINS_1         // A相低侧驱动引脚：GPIOB.1
+#define PHASE_A_PIN_SOURCE_LOW GPIO_PINS_SOURCE1  // A相低侧驱动引脚源
+#define PHASE_A_GPIO_PORT_LOW GPIOB          // A相低侧驱动引脚端口
+#define PHASE_A_GPIO_HIGH GPIO_PINS_10       // A相高侧驱动引脚：GPIOA.10
+#define PHASE_A_PIN_SOURCE_HIGH GPIO_PINS_SOURCE10  // A相高侧驱动引脚源
+#define PHASE_A_GPIO_PORT_HIGH GPIOA         // A相高侧驱动引脚端口
 
-#define PHASE_C_GPIO_LOW GPIO_PINS_7
-#define PHASE_C_PIN_SOURCE_LOW GPIO_PINS_SOURCE7
-#define PHASE_C_GPIO_PORT_LOW GPIOA
-#define PHASE_C_GPIO_HIGH GPIO_PINS_8
-#define PHASE_C_PIN_SOURCE_HIGH GPIO_PINS_SOURCE8
-#define PHASE_C_GPIO_PORT_HIGH GPIOA
+// B相驱动引脚配置
+#define PHASE_B_GPIO_LOW GPIO_PINS_0         // B相低侧驱动引脚：GPIOB.0
+#define PHASE_B_PIN_SOURCE_LOW GPIO_PINS_SOURCE0  // B相低侧驱动引脚源
+#define PHASE_B_GPIO_PORT_LOW GPIOB          // B相低侧驱动引脚端口
+#define PHASE_B_GPIO_HIGH GPIO_PINS_9        // B相高侧驱动引脚：GPIOA.9
+#define PHASE_B_PIN_SOURCE_HIGH GPIO_PINS_SOURCE9  // B相高侧驱动引脚源
+#define PHASE_B_GPIO_PORT_HIGH GPIOA         // B相高侧驱动引脚端口
+
+// C相驱动引脚配置
+#define PHASE_C_GPIO_LOW GPIO_PINS_7         // C相低侧驱动引脚：GPIOA.7
+#define PHASE_C_PIN_SOURCE_LOW GPIO_PINS_SOURCE7  // C相低侧驱动引脚源
+#define PHASE_C_GPIO_PORT_LOW GPIOA          // C相低侧驱动引脚端口
+#define PHASE_C_GPIO_HIGH GPIO_PINS_8        // C相高侧驱动引脚：GPIOA.8
+#define PHASE_C_PIN_SOURCE_HIGH GPIO_PINS_SOURCE8  // C相高侧驱动引脚源
+#define PHASE_C_GPIO_PORT_HIGH GPIOA         // C相高侧驱动引脚端口
 
 #endif
 
