@@ -937,198 +937,267 @@ void startMotor()
     enableCompInterrupts();
 }
 
+/**
+ * @brief 处理输入信号并转换为电机控制命令
+ * 
+ * 该函数根据输入信号类型（PWM或DShot）和配置参数，
+ * 计算电机的控制值，处理方向切换、制动和启动逻辑。
+ */
 void setInput()
 {
+    // 处理双向模式
     if (eepromBuffer.bi_direction) {
+        // 处理PWM输入
         if (dshot == 0) {
+            // RC车反转模式
             if (eepromBuffer.rc_car_reverse) {
+                // 正向输入（大于中心值）
                 if (newinput > (1000 + (servo_dead_band << 1))) {
+                    // 如果当前方向与设定方向相反，启用比例制动
                     if (forward == eepromBuffer.dir_reversed) {
                         adjusted_input = 0;
-                        //               if (running) {
                         prop_brake_active = 1;
+                        // 如果需要返回中心位置，切换方向
                         if (return_to_center) {
                             forward = 1 - eepromBuffer.dir_reversed;
                             prop_brake_active = 0;
                             return_to_center = 0;
                         }
                     }
+                    // 如果比例制动未激活，映射输入值
                     if (prop_brake_active == 0) {
                         return_to_center = 0;
                         adjusted_input = map(newinput, 1000 + (servo_dead_band << 1), 2000, 47, 2047);
                     }
                 }
+                // 反向输入（小于中心值）
                 if (newinput < (1000 - (servo_dead_band << 1))) {
+                    // 如果当前方向与设定方向相反，启用比例制动
                     if (forward == (1 - eepromBuffer.dir_reversed)) {
                         adjusted_input = 0;
                         prop_brake_active = 1;
+                        // 如果需要返回中心位置，切换方向
                         if (return_to_center) {
                             forward = eepromBuffer.dir_reversed;
                             prop_brake_active = 0;
                             return_to_center = 0;
                         }
                     }
+                    // 如果比例制动未激活，映射输入值
                     if (prop_brake_active == 0) {
                         return_to_center = 0;
                         adjusted_input = map(newinput, 0, 1000 - (servo_dead_band << 1), 2047, 47);
                     }
                 }
+                // 中心区域（死区）
                 if (newinput >= (1000 - (servo_dead_band << 1)) && newinput <= (1000 + (servo_dead_band << 1))) {
                     adjusted_input = 0;
+                    // 如果比例制动激活，重置状态
                     if (prop_brake_active) {
                         prop_brake_active = 0;
                         return_to_center = 1;
                     }
                 }
-            } else {
+            } else { // 标准双向模式
+                // 正向输入（大于中心值）
                 if (newinput > (1000 + (servo_dead_band << 1))) {
+                    // 如果当前方向与设定方向相反，尝试切换方向
                     if (forward == eepromBuffer.dir_reversed) {
+                        // 检查是否满足方向切换条件
                         if (((commutation_interval > reverse_speed_threshold) && (duty_cycle < 200)) || stepper_sine) {
+                            // 切换方向并重置相关状态
                             forward = 1 - eepromBuffer.dir_reversed;
                             zero_crosses = 0;
                             old_routine = 1;
                             maskPhaseInterrupts();
                             brushed_direction_set = 0;
                         } else {
+                            // 不满足切换条件，将输入设为中心值
                             newinput = 1000;
                         }
                     }
+                    // 映射输入值
                     adjusted_input = map(newinput, 1000 + (servo_dead_band << 1), 2000, 47, 2047);
                 }
+                // 反向输入（小于中心值）
                 if (newinput < (1000 - (servo_dead_band << 1))) {
+                    // 如果当前方向与设定方向相反，尝试切换方向
                     if (forward == (1 - eepromBuffer.dir_reversed)) {
+                        // 检查是否满足方向切换条件
                         if (((commutation_interval > reverse_speed_threshold) && (duty_cycle < 200)) || stepper_sine) {
+                            // 切换方向并重置相关状态
                             zero_crosses = 0;
                             old_routine = 1;
                             forward = eepromBuffer.dir_reversed;
                             maskPhaseInterrupts();
                             brushed_direction_set = 0;
                         } else {
+                            // 不满足切换条件，将输入设为中心值
                             newinput = 1000;
                         }
                     }
+                    // 映射输入值
                     adjusted_input = map(newinput, 0, 1000 - (servo_dead_band << 1), 2047, 47);
                 }
 
+                // 中心区域（死区）
                 if (newinput >= (1000 - (servo_dead_band << 1)) && newinput <= (1000 + (servo_dead_band << 1))) {
                     adjusted_input = 0;
                     brushed_direction_set = 0;
                 }
             }
         }
+        // 处理DShot输入
         if (dshot) {
-                     if (eepromBuffer.rc_car_reverse) {
-                         if (newinput > 1047) {
-                         if (forward == eepromBuffer.dir_reversed) {
-                         adjusted_input = 0;
-                         prop_brake_active = 1;
-                         if (return_to_center) {
-                             forward = 1 - eepromBuffer.dir_reversed;
-                             prop_brake_active = 0;
-                             return_to_center = 0;
-                         }
-                     }
-                     if (prop_brake_active == 0) {
-                         return_to_center = 0;
-                         adjusted_input = ((newinput - 1048) * 2 + 47) - reversing_dead_band;
-                     }
-                     }
-                     if (newinput <= 1047 && newinput > 47) {
-                     if (forward == (1 - eepromBuffer.dir_reversed)) {
-                         adjusted_input = 0;
-                         prop_brake_active = 1;
-                         if (return_to_center) {
-                             forward = eepromBuffer.dir_reversed;
-                             prop_brake_active = 0;
-                             return_to_center = 0;
-                         }
-                     }
-                     if (prop_brake_active == 0) {
-                         return_to_center = 0;
-                         adjusted_input = ((newinput - 48) * 2 + 47) - reversing_dead_band;
-                     }
-                     }
-                     if (newinput < 48) {
-                     adjusted_input = 0;
-                     if (prop_brake_active) {
-                         prop_brake_active = 0;
-                         return_to_center = 1;
-                     }
-                 }
-                         } else {
-            if (newinput > 1047) {
-
-                if (forward == eepromBuffer.dir_reversed) {
-                    if (((commutation_interval > reverse_speed_threshold) && (duty_cycle < 200)) || stepper_sine) {
-                        forward = 1 - eepromBuffer.dir_reversed;
-                        zero_crosses = 0;
-                        old_routine = 1;
-                        maskPhaseInterrupts();
-                        brushed_direction_set = 0;
-                     } else {
-                        newinput = 0;
+            // RC车反转模式
+            if (eepromBuffer.rc_car_reverse) {
+                // 正向输入（大于中心值）
+                if (newinput > 1047) {
+                    // 如果当前方向与设定方向相反，启用比例制动
+                    if (forward == eepromBuffer.dir_reversed) {
+                        adjusted_input = 0;
+                        prop_brake_active = 1;
+                        // 如果需要返回中心位置，切换方向
+                        if (return_to_center) {
+                            forward = 1 - eepromBuffer.dir_reversed;
+                            prop_brake_active = 0;
+                            return_to_center = 0;
+                        }
+                    }
+                    // 如果比例制动未激活，计算输入值
+                    if (prop_brake_active == 0) {
+                        return_to_center = 0;
+                        adjusted_input = ((newinput - 1048) * 2 + 47) - reversing_dead_band;
                     }
                 }
-                adjusted_input = ((newinput - 1048) * 2 + 47) - reversing_dead_band;
-            }
-            if (newinput <= 1047 && newinput > 47) {
-                if (forward == (1 - eepromBuffer.dir_reversed)) {
-                    if (((commutation_interval > reverse_speed_threshold) && (duty_cycle < 200)) || stepper_sine) {
-                        zero_crosses = 0;
-                        old_routine = 1;
-                        forward = eepromBuffer.dir_reversed;
-                        maskPhaseInterrupts();
-                        brushed_direction_set = 0;
-                     } else {
-                        newinput = 0;
+                // 反向输入（小于中心值但大于最小值）
+                if (newinput <= 1047 && newinput > 47) {
+                    // 如果当前方向与设定方向相反，启用比例制动
+                    if (forward == (1 - eepromBuffer.dir_reversed)) {
+                        adjusted_input = 0;
+                        prop_brake_active = 1;
+                        // 如果需要返回中心位置，切换方向
+                        if (return_to_center) {
+                            forward = eepromBuffer.dir_reversed;
+                            prop_brake_active = 0;
+                            return_to_center = 0;
+                        }
+                    }
+                    // 如果比例制动未激活，计算输入值
+                    if (prop_brake_active == 0) {
+                        return_to_center = 0;
+                        adjusted_input = ((newinput - 48) * 2 + 47) - reversing_dead_band;
                     }
                 }
-                adjusted_input = ((newinput - 48) * 2 + 47) - reversing_dead_band;
-            }
-            if (newinput < 48) {
-                adjusted_input = 0;
-                brushed_direction_set = 0;
+                // 最小值输入（停止）
+                if (newinput < 48) {
+                    adjusted_input = 0;
+                    // 如果比例制动激活，重置状态
+                    if (prop_brake_active) {
+                        prop_brake_active = 0;
+                        return_to_center = 1;
+                    }
+                }
+            } else { // 标准双向模式
+                // 正向输入（大于中心值）
+                if (newinput > 1047) {
+                    // 如果当前方向与设定方向相反，尝试切换方向
+                    if (forward == eepromBuffer.dir_reversed) {
+                        // 检查是否满足方向切换条件
+                        if (((commutation_interval > reverse_speed_threshold) && (duty_cycle < 200)) || stepper_sine) {
+                            // 切换方向并重置相关状态
+                            forward = 1 - eepromBuffer.dir_reversed;
+                            zero_crosses = 0;
+                            old_routine = 1;
+                            maskPhaseInterrupts();
+                            brushed_direction_set = 0;
+                        } else {
+                            // 不满足切换条件，将输入设为0
+                            newinput = 0;
+                        }
+                    }
+                    // 计算输入值
+                    adjusted_input = ((newinput - 1048) * 2 + 47) - reversing_dead_band;
+                }
+                // 反向输入（小于中心值但大于最小值）
+                if (newinput <= 1047 && newinput > 47) {
+                    // 如果当前方向与设定方向相反，尝试切换方向
+                    if (forward == (1 - eepromBuffer.dir_reversed)) {
+                        // 检查是否满足方向切换条件
+                        if (((commutation_interval > reverse_speed_threshold) && (duty_cycle < 200)) || stepper_sine) {
+                            // 切换方向并重置相关状态
+                            zero_crosses = 0;
+                            old_routine = 1;
+                            forward = eepromBuffer.dir_reversed;
+                            maskPhaseInterrupts();
+                            brushed_direction_set = 0;
+                        } else {
+                            // 不满足切换条件，将输入设为0
+                            newinput = 0;
+                        }
+                    }
+                    // 计算输入值
+                    adjusted_input = ((newinput - 48) * 2 + 47) - reversing_dead_band;
+                }
+                // 最小值输入（停止）
+                if (newinput < 48) {
+                    adjusted_input = 0;
+                    brushed_direction_set = 0;
                 }
             }
         }
-    } else {
+    } else { // 非双向模式
+        // 直接使用原始输入值
         adjusted_input = newinput;
     }
 #ifndef BRUSHED_MODE
+    // 卡转子保护
     if ((bemf_timeout_happened > bemf_timeout) && eepromBuffer.stuck_rotor_protection) {
+        // 关闭所有输出
         allOff();
         maskPhaseInterrupts();
         input = 0;
         bemf_timeout_happened = 102;
 #ifdef USE_RGB_LED
+        // 点亮红色LED表示卡转子错误
         setIndividualRGBLed(1, 0, 0);
 #endif
     } else {
 #ifdef FIXED_DUTY_MODE
+        // 固定占空比模式
         input = FIXED_DUTY_MODE_POWER * 20 + 47;
 #else
+        // 处理正弦启动模式
         if (eepromBuffer.use_sine_start) {
-            if (adjusted_input < 30) { // dead band ?
+            // 死区处理
+            if (adjusted_input < 30) {
                 input = 0;
             }
+            // 低转速区域（使用正弦启动）
             if (adjusted_input > 30 && adjusted_input < (eepromBuffer.sine_mode_changeover_thottle_level * 20)) {
                 input = map(adjusted_input, 30,
                     (eepromBuffer.sine_mode_changeover_thottle_level * 20), 47, 160);
             }
+            // 高转速区域（正常驱动）
             if (adjusted_input >= (eepromBuffer.sine_mode_changeover_thottle_level * 20)) {
                 input = map(adjusted_input, (eepromBuffer.sine_mode_changeover_thottle_level * 20),
                     2047, 160, 2047);
             }
         } else {
+            // 速度控制模式
             if (use_speed_control_loop) {
                 if (drive_by_rpm) {
+                    // 根据输入值计算目标电角度时间（转速）
                     target_e_com_time = 60000000 / map(adjusted_input, 47, 2047, MINIMUM_RPM_SPEED_CONTROL, MAXIMUM_RPM_SPEED_CONTROL) / (eepromBuffer.motor_poles / 2);
-                    if (adjusted_input < 47) { // dead band ?
+                    // 死区处理
+                    if (adjusted_input < 47) {
                         input = 0;
                         speedPid.error = 0;
                         input_override = 0;
                     } else {
-                        input = (uint16_t)(input_override / 10000); // speed control pid override
+                        // 使用速度控制PID的输出
+                        input = (uint16_t)(input_override / 10000);
+                        // 限制输入范围
                         if (input > 2047) {
                             input = 2047;
                         }
@@ -1137,8 +1206,9 @@ void setInput()
                         }
                     }
                 } else {
-
-                    input = (uint16_t)(input_override / 10000); // speed control pid override
+                    // 使用速度控制PID的输出
+                    input = (uint16_t)(input_override / 10000);
+                    // 限制输入范围
                     if (input > 2047) {
                         input = 2047;
                     }
@@ -1147,7 +1217,7 @@ void setInput()
                     }
                 }
             } else {
-
+                // 直接使用调整后的输入值
                 input = adjusted_input;
             }
         }
@@ -1158,29 +1228,36 @@ void setInput()
 if (!stepper_sine && armed) {
         if (input >= 47 + (80 * eepromBuffer.use_sine_start)) {
             if (running == 0) {
+                // 准备启动电机
                 allOff();
                 if (!old_routine) {
+                    // 启动电机
                     startMotor();
                 }
+                // 设置运行状态
                 running = 1;
+                // 初始化启动占空比
                 last_duty_cycle = min_startup_duty;
             }
 
+            // 根据正弦启动模式设置占空比
             if (eepromBuffer.use_sine_start) {
                 duty_cycle_setpoint = map(input, 137, 2047, minimum_duty_cycle+40, 2000);
             } else {
                 duty_cycle_setpoint = map(input, 47, 2047, minimum_duty_cycle, 2000);
             }
 
+            // 非RC车模式下重置比例制动状态
             if (!eepromBuffer.rc_car_reverse) {
                 prop_brake_active = 0;
             }
         }
 
         if (input < 47 + (80 * eepromBuffer.use_sine_start)) {
+            // 处理音调播放
             if (play_tone_flag != 0) {
                 switch (play_tone_flag) {
-									
+							
                 case 1:
                     playDefaultTone();
                     break;
@@ -1200,11 +1277,15 @@ if (!stepper_sine && armed) {
                 play_tone_flag = 0;
             }
 
+            // 非互补PWM模式
             if (!eepromBuffer.comp_pwm) {
+                // 设置占空比为0
                 duty_cycle_setpoint = 0;
                 if (!running) {
+                    // 重置状态
                     old_routine = 1;
                     zero_crosses = 0;
+                    // 处理停止时的制动
                     if (eepromBuffer.brake_on_stop) {
                         fullBrake();
                     } else {
@@ -1213,16 +1294,17 @@ if (!stepper_sine && armed) {
                         }
                     }
                 }
+                // RC车模式下的比例制动
                 if (eepromBuffer.rc_car_reverse && prop_brake_active) {
 #ifndef PWM_ENABLE_BRIDGE
-
-                  if (dshot == 0) prop_brake_duty_cycle = (getAbsDif(1000, newinput) + 1000);
+                    // 根据输入类型计算比例制动占空比
+                    if (dshot == 0) prop_brake_duty_cycle = (getAbsDif(1000, newinput) + 1000);
                     if (dshot)  {
                         if (newinput <= 1047 && newinput > 47) prop_brake_duty_cycle = ((newinput - 48) * 2 + 47) - reversing_dead_band;
                         if (newinput > 1047) prop_brake_duty_cycle = ((newinput - 1048) * 2 + 47) - reversing_dead_band;
                     }
+                    // 根据占空比选择完全制动或比例制动
                     if (prop_brake_duty_cycle >= (1999)) {
-
                         fullBrake();
                     } else {
                         proportionalBrake();
@@ -1230,16 +1312,21 @@ if (!stepper_sine && armed) {
 #endif
                 }
             } else {
+                // 互补PWM模式
                 if (!running) {
 
+                    // 重置状态
                     old_routine = 1;
                     zero_crosses = 0;
                     bad_count = 0;
+                    // 处理停止时的制动
                     if (eepromBuffer.brake_on_stop > 0) {
                         if (!eepromBuffer.use_sine_start) {
 #ifndef PWM_ENABLE_BRIDGE
                           if(eepromBuffer.brake_on_stop == 1){
+                             // 根据拖拽制动强度设置比例制动占空比
                              prop_brake_duty_cycle =  eepromBuffer.drag_brake_strength * 200;
+                              // 根据占空比选择完全制动或比例制动
                               if (prop_brake_duty_cycle >= (1999)) {
                                 fullBrake();
                               } else {
@@ -1277,6 +1364,7 @@ if (!stepper_sine && armed) {
             }
         }
         if (!prop_brake_active) {
+            // 启动时的占空比限制
             if (input >= 47 && (zero_crosses < (uint32_t)(30 >> eepromBuffer.stall_protection))) {
                 if (duty_cycle_setpoint < min_startup_duty) {
                     duty_cycle_setpoint = min_startup_duty;
@@ -1286,17 +1374,19 @@ if (!stepper_sine && armed) {
                 }
             }
 
+            // 最大占空比限制
             if (duty_cycle_setpoint > duty_cycle_maximum) {
                 duty_cycle_setpoint = duty_cycle_maximum;
             }
+            // 电流限制
             if (use_current_limit) {
                 if (duty_cycle_setpoint > use_current_limit_adjust) {
                     duty_cycle_setpoint = use_current_limit_adjust;
                 }
             }
 
+            // 失速保护调整
             if (stall_protection_adjust > 0 && input > 47) {
-
                 duty_cycle_setpoint = duty_cycle_setpoint + (uint16_t)(stall_protection_adjust/10000);
             }
         }
@@ -1304,64 +1394,100 @@ if (!stepper_sine && armed) {
 #endif
 }
 
+/**
+ * @brief 高频例行任务函数
+ * 
+ * 该函数以20kHz的频率执行（原名为10kHz，在2.00版本中改为20kHz），
+ * 主要执行以下任务：
+ * 1. 更新占空比
+ * 2. 递增各种计数器
+ * 3. 处理arming逻辑
+ * 4. 处理电池电压检测和电芯计数
+ * 5. 控制LED指示
+ * 6. 播放音调
+ * 7. 处理RC车反转模式
+ */
 void tenKhzRoutine()
 { // 20khz as of 2.00 to be renamed
+    // 更新占空比为设定值
     duty_cycle = duty_cycle_setpoint;
-    tenkhzcounter++;
-    ledcounter++;
-    ramp_count++;
-    one_khz_loop_counter++;
+    
+    // 递增各种计数器
+    tenkhzcounter++;       // 10kHz计数器
+    ledcounter++;           // LED计数器
+    ramp_count++;           // 油门斜率计数器
+    one_khz_loop_counter++; // 1kHz循环计数器
+    
+    // 处理arming逻辑
     if (!armed) {
         if (cell_count == 0) {
             if (inputSet) {
                 if (adjusted_input == 0) {
+                    // 零输入时递增arming超时计数器
                     armed_timeout_count++;
+                    
+                    // 超时超过1秒（LOOP_FREQUENCY_HZ）
                     if (armed_timeout_count > LOOP_FREQUENCY_HZ) { // one second
+                        // 零输入计数超过30，允许arming
                         if (zero_input_count > 30) {
+                            // 设置为armed状态
                             armed = 1;
+                            
+                            // 控制LED指示armed状态
 #ifdef USE_LED_STRIP
                             //	send_LED_RGB(0,0,0);
                             delayMicros(1000);
-                            send_LED_RGB(0, 255, 0);
+                            send_LED_RGB(0, 255, 0); // 绿色LED表示armed
 #endif
 #ifdef USE_RGB_LED
-                            setIndividualRGBLed(0,1,0);
+                            setIndividualRGBLed(0,1,0); // 绿色LED表示armed
 #endif
+                            
+                            // 检测电池电芯数
                             if ((cell_count == 0) && eepromBuffer.low_voltage_cut_off == 1) {
+                                // 根据电池电压计算电芯数（370mV/电芯）
                                 cell_count = battery_voltage / 370;
+                                // 为每个电芯播放音调
                                 for (int i = 0; i < cell_count; i++) {
                                     playInputTune();
                                     delayMillis(100);
                                     RELOAD_WATCHDOG_COUNTER();
                                 }
                             } else {
+                                // 播放arming成功音调
 #ifdef MCU_AT415
-															play_tone_flag = 4;
+														play_tone_flag = 4;
 #else
-															playInputTune();
+														playInputTune();
 #endif
                             }
+                            
+                            // 非伺服PWM和非DShot模式下，禁用RC车反转
                             if (!servoPwm && !dshot) {
                                 eepromBuffer.rc_car_reverse = 0;
                             }
                         } else {
+                            // 零输入计数不足，重置状态
                             inputSet = 0;
                             armed_timeout_count = 0;
                         }
                     }
                 } else {
+                    // 非零输入，重置arming超时计数器
                     armed_timeout_count = 0;
                 }
             }
         }
     }
 
+    // 处理遥测数据发送
     if (eepromBuffer.telemetry_on_interval) {
         telem_ms_count++;
+        // 根据遥测间隔和标识符计算发送时机
         if (telem_ms_count > ((telemetry_interval_ms - 1 + eepromBuffer.telemetry_on_interval) * 20)) {
-            // telemetry_on_interval = 1 is a boolean, but it can also be 2 or more to indicate an identifier
-            // by making the interval just slightly different with an unique identifier, we can guarantee that many ESCs can communicate on just one signal
-            // there will be some collisions but not as many as if two ESCs always tried to talk at once.
+            // telemetry_on_interval = 1 是布尔值，但也可以是2或更大的值作为标识符
+            // 通过使用略有不同的间隔和唯一标识符，保证多个ESC可以在同一信号线上通信
+            // 会有一些冲突，但不会像两个ESC总是同时尝试通信那样多
             send_telemetry = 1;
             telem_ms_count = 0;
         }
@@ -1369,34 +1495,48 @@ void tenKhzRoutine()
 
 #ifndef BRUSHED_MODE
 
+    // 无刷模式下的BEMF检测
     if (!stepper_sine) {
 #ifndef CUSTOM_RAMP
+        // 旧例程模式且电机运行时
         if (old_routine && running) {
-	//				send_LED_RGB(255, 0, 0);
+	//			send_LED_RGB(255, 0, 0);
+            // 屏蔽相位中断
             maskPhaseInterrupts();
+            // 获取BEMF状态
             getBemfState();
+            // 如果未找到过零点
             if (!zcfound) {
+                // 上升沿检测
                 if (rising) {
+                    // 超过最小BEMF计数（上升沿）
                     if (bemfcounter > min_bemf_counts_up) {
                         zcfound = 1;
-                        zcfoundroutine();
+                        zcfoundroutine(); // 处理过零点
                     }
                 } else {
+                    // 下降沿检测
                     if (bemfcounter > min_bemf_counts_down) {
                         zcfound = 1;
-                        zcfoundroutine();
+                        zcfoundroutine(); // 处理过零点
                     }
                 }
             }
         }
 #endif
+        // 1kHz PID控制循环
         if (one_khz_loop_counter > PID_LOOP_DIVIDER) { // 1khz PID loop
+            // 设置ADC处理标志，在低优先级下执行新的ADC读取
             PROCESS_ADC_FLAG = 1; // set flag to do new adc read at lower priority
             one_khz_loop_counter = 0;
+            
+            // 电流限制处理
             if (use_current_limit && running) {
+                // 计算电流PID控制器输出并调整电流限制
                 use_current_limit_adjust -= (int16_t)(doPidCalculations(&currentPid, actual_current,
                                                           eepromBuffer.limits.current * 2 * 100)
                     / 10000);
+                // 限制电流限制调整值范围
                 if (use_current_limit_adjust < minimum_duty_cycle) {
                     use_current_limit_adjust = minimum_duty_cycle;
                 }
@@ -1404,10 +1544,14 @@ void tenKhzRoutine()
                     use_current_limit_adjust = 2000;
                 }
             }
+            
+            // 失速保护调整（用于攀爬车和RC车，不建议多旋翼使用）
             if (eepromBuffer.stall_protection && running) { // this boosts throttle as the rpm gets lower, for crawlers
                                                // and rc cars only, do not use for multirotors.
+                // 计算失速保护PID控制器输出并调整失速保护
                 stall_protection_adjust += (doPidCalculations(&stallPid, commutation_interval,
                                                stall_protect_target_interval));
+                // 限制失速保护调整值范围
                 if (stall_protection_adjust > 150 * 10000) {
                     stall_protection_adjust = 150 * 10000;
                 }
@@ -1415,22 +1559,30 @@ void tenKhzRoutine()
                     stall_protection_adjust = 0;
                 }
             }
+            
+            // 速度控制处理
             if (use_speed_control_loop && running) {
+                // 计算速度PID控制器输出并调整输入覆盖值
                 input_override += doPidCalculations(&speedPid, e_com_time, target_e_com_time);
+                // 限制输入覆盖值范围
                 if (input_override > 2047 * 10000) {
                     input_override = 2047 * 10000;
                 }
                 if (input_override < 0) {
                     input_override = 0;
                 }
+                // 零交叉次数小于100时，重置速度PID积分项
                 if (zero_crosses < 100) {
                     speedPid.integral = 0;
                 }
             }
         }
+        
+        // 油门斜率控制
         if (ramp_count > ramp_divider) {
           ramp_count = 0;
 #ifdef VOLTAGE_BASED_RAMP
+            // 基于电压的最大占空比变化
             uint16_t voltage_based_max_change = map(battery_voltage, 800, 2200, 10, 1);
             if (average_interval > 200) {
                 max_duty_cycle_change = voltage_based_max_change;
@@ -1438,13 +1590,14 @@ void tenKhzRoutine()
                 max_duty_cycle_change = voltage_based_max_change * 3;
             }
 #else
+            // 基于零交叉次数和占空比的最大占空比变化
             if (zero_crosses < 150 || last_duty_cycle < 150) {   
-                max_duty_cycle_change = max_ramp_startup;
+                max_duty_cycle_change = max_ramp_startup; // 启动时使用较大的斜率
             } else {
                 if (average_interval > 500) {
-                    max_duty_cycle_change = max_ramp_low_rpm;
+                    max_duty_cycle_change = max_ramp_low_rpm; // 低转速时使用较大的斜率
                 } else {
-                    max_duty_cycle_change = max_ramp_high_rpm;
+                    max_duty_cycle_change = max_ramp_high_rpm; // 高转速时使用较小的斜率
                 }
             }
           
@@ -1452,37 +1605,52 @@ void tenKhzRoutine()
 #ifdef CUSTOM_RAMP
    //         max_duty_cycle_change = eepromBuffer[30];
 #endif
+            // 限制占空比变化速率（上升）
             if ((duty_cycle - last_duty_cycle) > max_duty_cycle_change) {
                 duty_cycle = last_duty_cycle + max_duty_cycle_change;
 
             }
+            // 限制占空比变化速率（下降）
             if ((last_duty_cycle - duty_cycle) > max_duty_cycle_change) {
                 duty_cycle = last_duty_cycle - max_duty_cycle_change;
             }
             }else{
+             // 未达到斜率控制间隔，保持上次占空比
              duty_cycle = last_duty_cycle;
             }
 
+        // 计算调整后的占空比
         if ((armed && running) && input > 47) {
+            // 可变PWM频率处理
             if (eepromBuffer.variable_pwm) {
             }
+            // 计算调整后的占空比（带最小脉冲宽度）
             adjusted_duty_cycle = ((duty_cycle * tim1_arr) / 2000) + 1;
 
         } else {
-
+            // 非运行状态或输入小于阈值
             if (prop_brake_active) {
+              // 比例制动时的占空比计算
               adjusted_duty_cycle =  tim1_arr - ((prop_brake_duty_cycle * tim1_arr) / 2000);
             } else {
+              // 主动制动处理
               if((eepromBuffer.brake_on_stop == 2) && armed){  // require arming for active brake
-                comStep(2);
+                comStep(2); // 设置换向步骤
+                // 计算主动制动占空比
                 adjusted_duty_cycle = DEAD_TIME + ((eepromBuffer.active_brake_power * tim1_arr) / 2000)* 10;
             }else{
+                // 正常占空比计算
                 adjusted_duty_cycle = ((duty_cycle * tim1_arr) / 2000);
             }
             }
         }
+        
+        // 更新上次占空比
         last_duty_cycle = duty_cycle;
+        
+        // 设置PWM自动重载值
         SET_AUTO_RELOAD_PWM(tim1_arr);
+        // 设置所有通道的占空比
         SET_DUTY_CYCLE_ALL(adjusted_duty_cycle);
     }
 #endif // ndef brushed_mode

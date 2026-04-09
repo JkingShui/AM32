@@ -69,25 +69,49 @@ uint8_t programming_mode;
 uint16_t position;
 uint8_t  new_byte;
 
+/**
+ * @brief 解析 DShot 协议输入信号
+ * 
+ * 该函数通过分析 DMA 捕获的脉冲时间序列，解码 DShot 协议的命令和数据，
+ * 并执行相应的操作，如电机控制、命令处理、遥测数据处理等。
+ */
 void computeDshotDMA()
 {
+    // 计算帧时间（整个 DShot 帧的持续时间）
     dshot_frametime = dma_buffer[31] - dma_buffer[0];
+    
+    // 计算半脉冲时间（用于判断位值的阈值）
     halfpulsetime = dshot_frametime >> 5;
+    
+    // 验证帧时间是否在有效范围内
     if ((dshot_frametime > dshot_frametime_low) && (dshot_frametime < dshot_frametime_high)) {
-			signaltimeout = 0;
+        // 重置信号超时计数器
+        signaltimeout = 0;
+        
+        // 解析 16 个脉冲的宽度，确定每个位的值
         for (int i = 0; i < 16; i++) {
-            // note that dma_buffer[] is uint32_t, we cast the difference to uint16_t to handle
-            // timer wrap correctly
+            // 计算相邻两个捕获值的差（脉冲宽度）
+            // 转换为 uint16_t 以正确处理定时器溢出
             const uint16_t pdiff = dma_buffer[(i << 1) + 1] - dma_buffer[(i << 1)];
+            
+            // 根据脉冲宽度判断位值（大于半脉冲时间为 1，否则为 0）
             dpulse[i] = (pdiff > halfpulsetime);
         }
-        uint8_t calcCRC = ((dpulse[0] ^ dpulse[4] ^ dpulse[8]) << 3 | (dpulse[1] ^ dpulse[5] ^ dpulse[9]) << 2 | (dpulse[2] ^ dpulse[6] ^ dpulse[10]) << 1 | (dpulse[3] ^ dpulse[7] ^ dpulse[11]));
+        
+        // 计算 CRC 校验值
+        uint8_t calcCRC = ((dpulse[0] ^ dpulse[4] ^ dpulse[8]) << 3 | 
+                          (dpulse[1] ^ dpulse[5] ^ dpulse[9]) << 2 | 
+                          (dpulse[2] ^ dpulse[6] ^ dpulse[10]) << 1 | 
+                          (dpulse[3] ^ dpulse[7] ^ dpulse[11]));
+        
+        // 提取接收到的 CRC 校验值
         uint8_t checkCRC = (dpulse[12] << 3 | dpulse[13] << 2 | dpulse[14] << 1 | dpulse[15]);
-
+        
+        // 处理遥测反转（在未武装状态下检测）
         if (!armed) {
             if (dshot_telemetry == 0) {
-                if (getInputPinState()) { // if the pin is high for 100 checks between
-                                          // signal pulses its inverted
+                // 检查输入引脚状态，判断是否需要反转遥测
+                if (getInputPinState()) {
                     high_pin_count++;
                     if (high_pin_count > 100) {
                         dshot_telemetry = 1;
@@ -95,137 +119,155 @@ void computeDshotDMA()
                 }
             }
         }
+        
+        // 如果遥测反转，对 CRC 进行处理
         if (dshot_telemetry) {
             checkCRC = ~checkCRC + 16;
         }
-
-        int tocheck = (dpulse[0] << 10 | dpulse[1] << 9 | dpulse[2] << 8 | dpulse[3] << 7 | dpulse[4] << 6 | dpulse[5] << 5 | dpulse[6] << 4 | dpulse[7] << 3 | dpulse[8] << 2 | dpulse[9] << 1 | dpulse[10]);
-
+        
+        // 从位值中提取命令值（11 位）
+        // tocheck为11位油门，其中0-47代表指令，48-2047代表油门
+        int tocheck = (dpulse[0] << 10 | dpulse[1] << 9 | dpulse[2] << 8 | 
+                      dpulse[3] << 7 | dpulse[4] << 6 | dpulse[5] << 5 | 
+                      dpulse[6] << 4 | dpulse[7] << 3 | dpulse[8] << 2 | 
+                      dpulse[9] << 1 | dpulse[10]);
+        
+        // 验证 CRC 校验
         if (calcCRC == checkCRC) {
+            // 重置信号超时计数器
             signaltimeout = 0;
+            // 增加成功计数
             dshot_goodcounts++;
+            
+            // 检查是否需要发送遥测数据
             if (dpulse[11] == 1) {
                 send_telemetry = 1;
             }
+            
+            // 处理编程模式
             if(programming_mode > 0){  
-                if(programming_mode == 1){ // begin programming mode
-                    position = tocheck;    // eepromBuffer position
+                if(programming_mode == 1){ // 开始编程模式
+                    position = tocheck;    // 设置 EEPROM 缓冲区位置
                     programming_mode = 2;
                     return;
                 }
-               if(programming_mode == 2){
-                    new_byte = tocheck;   // new value of setting
+               if(programming_mode == 2){ // 接收新的设置值
+                    new_byte = tocheck;   // 存储新的设置值
                     programming_mode = 3;
                     return;
                 }
-                if(programming_mode == 3){
-                    if(tocheck == 37){  // commit new values to eeprom. must use save settings to make permanent.
-                    eepromBuffer.buffer[position] = new_byte;
-                    programming_mode = 0;
-                  }
+                if(programming_mode == 3){ // 提交设置值
+                    if(tocheck == 37){  // 确认提交命令
+                        eepromBuffer.buffer[position] = new_byte;
+                        programming_mode = 0;
+                    }
                 }
-                return; // don't process dshot signal when in programming mode
+                return; // 编程模式下不处理 DShot 信号
             }
+            
+            // 处理电机控制信号（值大于 47）
             if (tocheck > 47) {
                 if (EDT_ARMED) {
-                    newinput = tocheck;
-                    dshotcommand = 0;
-                    command_count = 0;
+                    newinput = tocheck;  // 设置新的输入值
+                    dshotcommand = 0;    // 清除命令
+                    command_count = 0;    // 重置命令计数器
                     return;
                 }
             }
-
+            
+            // 处理 DShot 命令（值在 1-47 之间）
             if ((tocheck <= 47) && (tocheck > 0)) {
-                newinput = 0;
-                dshotcommand = tocheck; //  todo
+                newinput = 0;          // 清除输入值
+                dshotcommand = tocheck; // 设置命令值
             }
+            
+            // 处理零值命令（通常是停转命令）
             if (tocheck == 0) {
                 if (EDT_ARM_ENABLE == 1) {
-                    EDT_ARMED = 0;
+                    EDT_ARMED = 0;  // 解除武装
                 }
 #if DRONECAN_SUPPORT
                 if (DroneCAN_active()) {
-                    // allow DroneCAN to override DShot input
+                    // 允许 DroneCAN 覆盖 DShot 输入
                     return;
                 }
 #endif
-                newinput = 0;
-                dshotcommand = 0;
-                command_count = 0;
+                newinput = 0;          // 清除输入值
+                dshotcommand = 0;      // 清除命令
+                command_count = 0;      // 重置命令计数器
             }
-
+            
+            // 处理 DShot 命令（当电机未运行且已武装时）
             if ((dshotcommand > 0) && (running == 0) && armed) {
                 if (dshotcommand != last_command) {
                     last_command = dshotcommand;
                     command_count = 0;
                 }
-                if (dshotcommand <= 5) { // beacons
-                    command_count = 6; // go on right away
+                // 1-5，电调鸣叫，低频->高频
+                if (dshotcommand <= 5) { // 信标命令，立即执行
+                    command_count = 6;
                 }
                 command_count++;
-                if (command_count >= 6) {
+                if (command_count >= 6) { // 命令重复 6 次后执行
                     command_count = 0;
-                    switch (dshotcommand) { // todo
-
-                    case 1:
+                    
+                    // 处理具体命令
+                    switch (dshotcommand) {
+                    case 1: // 播放音调 1
                         play_tone_flag = 1;
                         break;
-                    case 2:
+                    case 2: // 播放音调 2
                         play_tone_flag = 2;
                         break;
-                    case 3:
+                    case 3: // 播放音调 3
                         play_tone_flag = 3;
                         break;
-                    case 4:
+                    case 4: // 播放音调 4
                         play_tone_flag = 4;
                         break;
-                    case 5:
+                    case 5: // 播放音调 5
                         play_tone_flag = 5;
                         break;
-                    case 6:
+                    case 6: // 发送电调信息
                         send_esc_info_flag = 1;
                         break;
-                    case 7:
+                    case 7: // 设置正向旋转
                         eepromBuffer.dir_reversed = 0;
                         forward = 1 - eepromBuffer.dir_reversed;
-                        //	play_tone_flag = 1;
                         break;
-                    case 8:
+                    case 8: // 设置反向旋转
                         eepromBuffer.dir_reversed = 1;
                         forward = 1 - eepromBuffer.dir_reversed;
-                        //	play_tone_flag = 2;
                         break;
-                    case 9:
+                    case 9: // 禁用双向模式
                         eepromBuffer.bi_direction = 0;
                         break;
-                    case 10:
+                    case 10: // 启用双向模式
                         eepromBuffer.bi_direction = 1;
                         break;
-                    case 12:
+                    case 12: // 保存设置到 EEPROM
                         saveEEpromSettings();
                         play_tone_flag = 1 + eepromBuffer.dir_reversed;
-                        //	NVIC_SystemReset();
                         break;
-                    case 13:
+                    case 13: // 启用扩展遥测
                         dshot_extended_telemetry = 1;
                         send_EDT_init = 1;
                         if (EDT_ARM_ENABLE == 1) {
                             EDT_ARMED = 1;
                         }
                         break;
-                    case 14:
+                    case 14: // 禁用扩展遥测
                         dshot_extended_telemetry = 0;
                         send_EDT_deinit = 1;
                         break;
-                    case 20:
+                    case 20: // 设置正向旋转（临时）
                         forward = 1 - eepromBuffer.dir_reversed;
                         break;
-                    case 21:
+                    case 21: // 设置反向旋转（临时）
                         forward = eepromBuffer.dir_reversed;
                         break;
-                    case 36:
+                    case 36: // 进入编程模式
                         programming_mode = 1;
-              //          armed = 0;           // disarm when entering programming mode
                         break;
                     }
                     last_dshot_command = dshotcommand;
@@ -233,8 +275,9 @@ void computeDshotDMA()
                 }
             }
         } else {
+            // CRC 校验失败
             dshot_badcounts++;
-            programming_mode = 0;
+            programming_mode = 0; // 退出编程模式
         }
     }
 }

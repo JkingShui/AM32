@@ -5,7 +5,9 @@
       "includePath": [
         "${workspaceFolder}/**",
         "${workspaceFolder}/Inc",
+        "${workspaceFolder}/Src",
         "${workspaceFolder}/Mcu/f421/Inc",
+        "${workspaceFolder}/Mcu/f421/Src",
         "${workspaceFolder}/Mcu/f421/Drivers/CMSIS/cm4/core_support",
         "${workspaceFolder}/Mcu/f421/Drivers/CMSIS/cm4/device_support",
         "${workspaceFolder}/Mcu/f421/Drivers/drivers/inc"
