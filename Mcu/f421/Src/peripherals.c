@@ -194,16 +194,20 @@ void TIM17_Init(void)
 
     // TMR_Cmd(TMR15, ENABLE);
 }
-
+/**
+ * @brief 初始化DMA通道1
+ * @note DMA通道1用于将数据从内存传输到USART1
+ */
 void MX_DMA_Init(void)
 {
-    crm_periph_clock_enable(CRM_DMA1_PERIPH_CLOCK, TRUE);
+    crm_periph_clock_enable(CRM_DMA1_PERIPH_CLOCK, TRUE);// 使能DMA1时钟，确保DMA通道1正常工作
     NVIC_SetPriority(DMA1_Channel5_4_IRQn, 1);
-    NVIC_EnableIRQ(DMA1_Channel5_4_IRQn);
+    NVIC_EnableIRQ(DMA1_Channel5_4_IRQn);// 使能DMA通道1的中断，用于接收DMA传输完成的中断信号
 }
 
 void MX_GPIO_Init(void) { }
 
+// 初始化定时器1和定时器3
 void UN_TIM_Init(void)
 {
 #ifdef USE_TIMER_3_CHANNEL_1
@@ -219,7 +223,6 @@ void UN_TIM_Init(void)
 #endif
 
     //	RCC_AHBPeriphClockCmd(RCC_AHBPERIPH_DMA1,ENABLE);
-
     crm_periph_clock_enable(CRM_DMA1_PERIPH_CLOCK, TRUE);
     INPUT_DMA_CHANNEL->ctrl = 0X98a; //  PERIPHERAL HALF WORD, MEMROY WORD ,
                                      //  MEMORY INC ENABLE , TC AND ERROR INTS

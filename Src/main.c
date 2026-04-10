@@ -591,6 +591,8 @@ int32_t doPidCalculations(struct fastPID* pidnow, int actual, int target)
 
 void loadEEpromSettings()
 {
+    // 从FLASH读取EEPROM设置
+    // @note 读取的EEPROM设置将覆盖当前的EEPROM设置
     read_flash_bin(eepromBuffer.buffer, eeprom_address, sizeof(eepromBuffer.buffer));
     if(eepromBuffer.eeprom_version < EEPROM_VERSION){
       eepromBuffer.max_ramp = 160;    // 0.1% per ms to 25% per ms 

@@ -1,13 +1,13 @@
 #include "kiss_telemetry.h"
 #include "eeprom.h"
 
-extern uint8_t get_crc8(uint8_t* Buf, uint8_t BufLen);
-
-uint8_t aTxBuffer[49] __attribute__((aligned(4)));
+extern uint8_t get_crc8(uint8_t *Buf, uint8_t BufLen);
+// 用于存储要发送的KISS telemetry数据包的缓冲区
+uint8_t aTxBuffer[49] __attribute__((aligned(4))); // 49字节，用于存储10字节的KISS telemetry数据包和1字节的CRC8校验
 
 void makeTelemPackage(int8_t temp, uint16_t voltage, uint16_t current, uint16_t consumption, uint16_t e_rpm)
 {
-    kiss_telem_pkt_t* telem_pkt = (kiss_telem_pkt_t*)aTxBuffer;
+    kiss_telem_pkt_t *telem_pkt = (kiss_telem_pkt_t *)aTxBuffer;
 
     telem_pkt->temperature = temp; // temperature in Celcius
 
@@ -27,12 +27,13 @@ void makeTelemPackage(int8_t temp, uint16_t voltage, uint16_t current, uint16_t 
     telem_pkt->erpm_h = (e_rpm >> 8) & 0xFF;
     telem_pkt->erpm_l = e_rpm & 0xFF;
 
-    telem_pkt->crc = get_crc8((uint8_t*)telem_pkt, sizeof(kiss_telem_pkt_t) - 1);
+    telem_pkt->crc = get_crc8((uint8_t *)telem_pkt, sizeof(kiss_telem_pkt_t) - 1);
 }
 
 void makeInfoPacket()
 {
-    for(int i = 0; i < 48; i++) {
+    for (int i = 0; i < 48; i++)
+    {
         aTxBuffer[i] = eepromBuffer.buffer[i];
     }
     aTxBuffer[48] = get_crc8(aTxBuffer, 48);

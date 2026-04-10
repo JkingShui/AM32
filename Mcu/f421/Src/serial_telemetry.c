@@ -8,12 +8,13 @@
 #include "serial_telemetry.h"
 #include "common.h"
 #include "kiss_telemetry.h"
-
+// 发送数据到USART1，使用DMA通道2
+// @param bytes 要发送的数据字节数
 void send_telem_DMA(uint8_t bytes)
-{ // set data length and enable channel to start transfer
-    DMA1_CHANNEL2->ctrl_bit.chen = FALSE;
-    DMA1_CHANNEL2->dtcnt = bytes;
-    DMA1_CHANNEL2->ctrl_bit.chen = TRUE;
+{                                         // set data length and enable channel to start transfer
+    DMA1_CHANNEL2->ctrl_bit.chen = FALSE; // 禁用DMA通道2，确保配置更改前通道处于停止状态
+    DMA1_CHANNEL2->dtcnt = bytes;         // 设置要传输的数据字节数
+    DMA1_CHANNEL2->ctrl_bit.chen = TRUE;  // 启用DMA通道2，开始数据传输
 }
 
 void telem_UART_Init(void)
@@ -49,8 +50,8 @@ void telem_UART_Init(void)
     dma_init_struct.loop_mode_enable = FALSE;
     dma_init(DMA1_CHANNEL2, &dma_init_struct);
 
- //   DMA1_CHANNEL2->ctrl |= DMA_FDT_INT;
- //   DMA1_CHANNEL2->ctrl |= DMA_DTERR_INT;
+    //   DMA1_CHANNEL2->ctrl |= DMA_FDT_INT;
+    //   DMA1_CHANNEL2->ctrl |= DMA_DTERR_INT;
 
     /* configure usart1 param */
     usart_init(USART1, 115200, USART_DATA_8BITS, USART_STOP_1_BIT);

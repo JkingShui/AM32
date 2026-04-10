@@ -10,6 +10,12 @@
 // uint32_t FLASH_FKEY1 =0x45670123;
 // uint32_t FLASH_FKEY2 =0xCDEF89AB;
 
+/**
+ * @brief 无库函数保存数据到FLASH
+ * @param data 要保存的数据指针
+ * @param length 要保存的数据字节数
+ * @param add 要保存的FLASH地址长度
+ */
 void save_flash_nolib(uint8_t* data, int length, uint32_t add)
 { /// todo
 
@@ -46,6 +52,12 @@ void save_flash_nolib(uint8_t* data, int length, uint32_t add)
     flash_lock();
 }
 
+/**
+ * @brief 无库函数从FLASH读取数据
+ * @param data 读取的数据指针
+ * @param add 要读取的FLASH地址长度
+ * @param out_buff_len 读取的数据字节数
+ */
 void read_flash_bin(uint8_t* data, uint32_t add, int out_buff_len)
 {
     // volatile uint32_t read_data;
