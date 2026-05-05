@@ -215,9 +215,11 @@ void playInputTune()
     setCaptureCompare();
     comStep(3);
     delayMillis(100);
-    SET_PRESCALER_PWM(70);
+    SET_PRESCALER_PWM(50);
     delayMillis(100);
-    SET_PRESCALER_PWM(40);
+    SET_PRESCALER_PWM(30);
+    delayMillis(100);
+    SET_PRESCALER_PWM(80);
     delayMillis(100);
     allOff();
     SET_PRESCALER_PWM(0);

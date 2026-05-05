@@ -1188,7 +1188,7 @@ void setInput()
         } else {
             // 速度控制模式
             if (use_speed_control_loop) {
-                if (drive_by_rpm) {
+                if (drive_by_rpm) {// 速度控制模式
                     // 根据输入值计算目标电角度时间（转速）
                     target_e_com_time = 60000000 / map(adjusted_input, 47, 2047, MINIMUM_RPM_SPEED_CONTROL, MAXIMUM_RPM_SPEED_CONTROL) / (eepromBuffer.motor_poles / 2);
                     // 死区处理
@@ -1421,10 +1421,10 @@ void tenKhzRoutine()
     one_khz_loop_counter++; // 1kHz循环计数器
     
     // 处理arming逻辑
-    if (!armed) {
-        if (cell_count == 0) {
-            if (inputSet) {
-                if (adjusted_input == 0) {
+    if (!armed) {// 未arming时
+        if (cell_count == 0) {// 电池电芯数为0时
+            if (inputSet) {// 输入有变化
+                if (adjusted_input == 0) {// 零输入
                     // 零输入时递增arming超时计数器
                     armed_timeout_count++;
                     
@@ -1498,7 +1498,7 @@ void tenKhzRoutine()
 #ifndef BRUSHED_MODE
 
     // 无刷模式下的BEMF检测
-    if (!stepper_sine) {
+    if (!stepper_sine) {// 用于标识电机是否处于 正弦步进启动模式 。
 #ifndef CUSTOM_RAMP
         // 旧例程模式且电机运行时
         if (old_routine && running) {
