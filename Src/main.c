@@ -437,11 +437,13 @@ uint16_t ADC_raw_ntc;
 uint8_t PROCESS_ADC_FLAG = 0;
 char send_telemetry = 0;
 char telemetry_done = 0;
+// 比例制动激活
 char prop_brake_active = 0;
 
 char dshot_telemetry = 0;
 
 uint8_t last_dshot_command = 0;
+// 初始值为1，表示轮询模式.基于轮询的换向与基于中断的换向
 char old_routine = 1;
 uint16_t adjusted_input = 0;
 
@@ -457,6 +459,7 @@ uint16_t readings[50];
 uint8_t bemf_timeout_happened = 0;
 uint8_t changeover_step = 5;
 uint8_t filter_level = 5;
+// 电机是否运行中
 uint8_t running = 0;
 uint16_t advance = 0;
 uint8_t advancedivisor = 6;
@@ -518,6 +521,7 @@ int16_t phase_A_position;
 int16_t phase_B_position;
 int16_t phase_C_position;
 uint16_t step_delay = 100;
+// 正弦波启动模式已激活
 char stepper_sine = 0;
 char forward = 1;
 uint16_t gate_drive_offset = DEAD_TIME;
@@ -532,12 +536,13 @@ uint8_t bad_count = 0;
 uint8_t bad_count_threshold = CPU_FREQUENCY_MHZ / 24;
 uint8_t dshotcommand;
 uint16_t armed_count_threshold = 1000;
-
+// 电机是否已启动
 char armed = 0;
 uint16_t zero_input_count = 0;
 
 uint16_t input = 0;
 uint16_t newinput = 0;
+// 检测到有效输入信号
 char inputSet = 0;
 char dshot = 0;
 char servoPwm = 0;
@@ -862,6 +867,7 @@ void commutate()
     __enable_irq();
     changeCompInput();
 #ifndef NO_POLLING_START
+    // 轮询模式：转速超过polling_mode_changeover阈值+500时，切换到轮询模式
 	if (average_interval > polling_mode_changeover + 500) {
       old_routine = 1;
    }
@@ -923,7 +929,10 @@ void interruptRoutine()
     maskPhaseInterrupts();
     lastzctime = thiszctime;
     thiszctime = INTERVAL_TIMER_COUNT;  
+    // 重置INTERVAL_TIMER_COUNT为0
+    // @note 这是为了在下一次中断时，INTERVAL_TIMER_COUNT能够正确地计算出时间间隔
     SET_INTERVAL_TIMER_COUNT(0);
+    // waitTime+1时间后触发TMR16_GLOBAL_IRQHandler中断
     SET_AND_ENABLE_COM_INT(waitTime+1); // enable COM_TIMER interrupt
     __enable_irq();
 }
@@ -1500,7 +1509,7 @@ void tenKhzRoutine()
     // 无刷模式下的BEMF检测
     if (!stepper_sine) {// 用于标识电机是否处于 正弦步进启动模式 。
 #ifndef CUSTOM_RAMP
-        // 旧例程模式且电机运行时
+        // 轮询模式且电机运行时
         if (old_routine && running) {
 	//			send_LED_RGB(255, 0, 0);
             // 屏蔽相位中断
@@ -1760,12 +1769,15 @@ void zcfoundroutine()
             enableCompInterrupts(); // enable interrupt
         }
 #else
+    // // 失速保护或RC车反转模式：20次过零且转速达到要求
     if (eepromBuffer.stall_protection || eepromBuffer.rc_car_reverse) {
+        // 换相次数超过20次且换相间隔小于等于2000时，切换到中断模式
         if (zero_crosses >= 20 && commutation_interval <= 2000) {
             old_routine = 0;
             enableCompInterrupts(); // enable interrupt
         }
     } else {
+        // // 正常模式：转速超过polling_mode_changeover阈值
        if (commutation_interval < polling_mode_changeover) {
             old_routine = 0;
             enableCompInterrupts(); // enable interrupt

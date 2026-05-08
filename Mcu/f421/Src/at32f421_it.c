@@ -191,6 +191,13 @@ void ADC1_CMP_IRQHandler(void)
 }
 
 /**
+ * #define INTERVAL_TIMER TMR6
+#define TEN_KHZ_TIMER TMR14
+#define UTILITY_TIMER TMR17
+#define COM_TIMER TMR16
+ */
+
+/**
  * @brief This function handles TIM6 global and DAC underrun error interrupts.
  */
 void TMR14_GLOBAL_IRQHandler(void)
