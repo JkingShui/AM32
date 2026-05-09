@@ -15,8 +15,7 @@
       "defines": [
         "__GNUC__",
         "__ARMCC_VERSION__=6010050",
-        "AT32DEV_F421",
-        "HARDWARE_GROUP_AT_B"
+        "AT32DEV_F421"      
       ],
       "compilerPath": "/usr/bin/gcc",
       "cStandard": "c11",

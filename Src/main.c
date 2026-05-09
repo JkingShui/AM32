@@ -322,6 +322,7 @@ uint8_t compute_dshot_flag = 0;
 uint8_t crsf_input_channel = 1;
 uint8_t crsf_output_PWM_channel = 2;
 uint8_t telemetry_interval_ms = 30;
+// 临时 advance
 uint8_t temp_advance;
 uint16_t motor_kv = 2000;
 uint8_t dead_time_override = DEAD_TIME;
@@ -420,9 +421,24 @@ uint16_t high_rpm_level = 70; //
 uint16_t throttle_max_at_low_rpm = 400;
 uint16_t throttle_max_at_high_rpm = 2000;
 
+/**
+ * @brief 换相间隔数组
+ * 
+ * 该数组用于存储6个换相间隔
+ */
 uint16_t commutation_intervals[6] = { 0 };
+/**
+ * @brief 平均换相时间间隔
+ * 
+ * 该变量用于存储平均换相时间间隔，
+ * 用于预测下一个零交叉点的最近换向间隔的滚动平均值
+ */
 uint32_t average_interval = 0;
 uint32_t last_average_interval;
+/**
+ * @brief 6个换相间隔的总和
+ * 
+ */
 int e_com_time;
 
 uint16_t ADC_smoothed_input = 0;
@@ -458,6 +474,10 @@ uint8_t bemf_timeout_happened = 0;
 uint8_t changeover_step = 5;
 uint8_t filter_level = 5;
 uint8_t running = 0;
+/**
+ * 电气定时提前。通过在 30° 电气中点之前略微换向，固件可以补偿绕组电感和 FET 开关延迟
+ * 提前角度（本质是时间）
+ */
 uint16_t advance = 0;
 uint8_t advancedivisor = 6;
 char rising = 1;
@@ -541,6 +561,11 @@ uint16_t newinput = 0;
 char inputSet = 0;
 char dshot = 0;
 char servoPwm = 0;
+/**
+ * @brief 零交叉次数
+ * 
+ * 该变量用于存储零交叉次数，单位为次。
+ */
 uint32_t zero_crosses;
 
 uint8_t zcfound = 0;
@@ -549,12 +574,35 @@ uint8_t bemfcounter;
 uint8_t min_bemf_counts_up = TARGET_MIN_BEMF_COUNTS;
 uint8_t min_bemf_counts_down = TARGET_MIN_BEMF_COUNTS;
 
+/**
+ * @brief 上一次零交叉时间
+ * 
+ * 该变量用于存储上一次零交叉的时间，单位为微秒。
+ */
 uint16_t lastzctime;
+/**
+ * @brief 本次零交叉时间
+ * 
+ * 该变量用于存储本次零交叉的时间，单位为微秒。
+ */
 uint16_t thiszctime;
 
 uint16_t duty_cycle = 0;
 char step = 1;
+/**
+ * @brief 电机换相时间间隔
+ * 是电机两次换相之间的时间间隔（对应60°电角度）
+ * 该变量用于存储电机换相的时间间隔，单位为微秒。
+ * 他的时间就是60度的时间间隔
+ * @note 该值根据电机的转速和进位角度动态调整。
+ */
 uint32_t commutation_interval = 12500;
+/**
+ * @brief 等待时间
+ * 过零事件与实际换向之间的延迟
+ * 该变量用于存储等待时间，单位为微秒。
+ * @note 该值根据电机的转速和进位角度动态调整。
+ */
 uint16_t waitTime = 0;
 uint16_t signaltimeout = 0;
 uint8_t ubAnalogWatchdogStatus = RESET;
@@ -835,6 +883,12 @@ void getBemfState()
     }
 }
 
+/**
+ * @brief 处理电机的相位切换
+ * 
+ * 该函数根据当前方向，切换电机的相位。
+ * 并根据是否反相，切换相位。
+ */
 void commutate()
 {
     if (forward == 1) {
@@ -877,6 +931,12 @@ void commutate()
 #endif
 }
 
+/**
+ * @brief 处理电机的相位切换和进位
+ * 
+ * 该函数根据当前相位和进位时间间隔，计算电机的进位角度。
+ * 并根据是否自动进位，选择不同的进位级别。
+ */
 void PeriodElapsedCallback()
 {
     DISABLE_COM_TIMER_INT(); // disable interrupt
@@ -896,6 +956,11 @@ void PeriodElapsedCallback()
     }
 }
 
+/**
+ * @brief 处理比较器中断
+ * 
+ * 该函数根据比较器的输出电平，切换电机的相位。
+ */
 void interruptRoutine()
 {
 //   if (average_interval > 125) {
@@ -919,6 +984,7 @@ void interruptRoutine()
                 return;
             }
         }
+    // 禁用全局中断
     __disable_irq();
     maskPhaseInterrupts();
     lastzctime = thiszctime;
@@ -1728,14 +1794,26 @@ void advanceincrement()
 #endif
 }
 
+/**
+ * @brief 处理电机的零交叉检测
+ * 
+ * 该函数根据当前零交叉次数，计算电机的零交叉时间间隔。
+ * 并根据是否自动进位，选择不同的进位级别。
+ */
 void zcfoundroutine()
 { // only used in polling mode, blocking routine.
-    thiszctime = INTERVAL_TIMER_COUNT;
-    SET_INTERVAL_TIMER_COUNT(0);
+    thiszctime = INTERVAL_TIMER_COUNT;// 记录当前时间交叉点
+    SET_INTERVAL_TIMER_COUNT(0);// 重置时间交叉点
+    // 一阶低通滤波，平滑时间间隔
     commutation_interval = (thiszctime + (3 * commutation_interval)) / 4;
+    // temp_advance ：提前角级别（0-64）
     advance = (temp_advance * commutation_interval) >> 6; //   7.5 degree increments
+    // waitTime = 30°电角度时间 - 提前量 = 实际换相时刻
     waitTime = commutation_interval / 2 - advance;
     while ((INTERVAL_TIMER_COUNT) < (waitTime)) {
+        // - 在电机刚启动时（ zero_crosses < 5 ），转速很低，反电动势信号不稳定
+        // - 通过提前退出等待，可以更快地响应过零事件，提升启动可靠性
+        // - 当电机稳定运行后（ zero_crosses >= 5 ），才执行完整的等待延时
         if (zero_crosses < 5) {
             break;
         }

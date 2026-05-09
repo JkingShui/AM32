@@ -1,0 +1,28 @@
+/*
+ * AM32 F421 固件烧录脚本
+ * 使用 J-Link Commander 执行
+ * 
+ * 执行命令:
+ * JLinkExe -device AT32F421C8T7 -if SWD -speed 4000 -commandFile flash_f421.jlink
+ */
+
+// 连接目标设备
+connect
+
+// 擦除 Flash
+// erase
+
+// 烧录应用固件 (从 0x08001000 开始)
+loadfile /Users/shuichangrong/git/AM32/obj/AM32_AT32DEV_F421_2.20.hex
+
+// 验证烧录结果
+verifyfile /Users/shuichangrong/git/AM32/obj/AM32_AT32DEV_F421_2.20.hex
+
+// 复位设备
+r
+
+// 启动运行
+g
+
+// 退出 J-Link
+exit

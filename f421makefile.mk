@@ -1,5 +1,5 @@
 MCU := F421
-PART := AT32F421K8U7
+PART := AT32F421C8T7
 
 MCU_LC := $(call lc,$(MCU))
 

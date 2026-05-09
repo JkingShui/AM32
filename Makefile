@@ -133,3 +133,30 @@ targets:
 	$(QUIET)echo List of targets. To build a target use 'make TARGETNAME'
 	$(QUIET)echo $(ALL_TARGETS)
 
+# Flash targets for F421 (AT32F421C8T7)
+F421_FIRMWARE := $(BIN_DIR)/$(IDENTIFIER)_AT32DEV_F421_$(FIRMWARE_VERSION).hex
+
+.PHONY: flash flash-f421
+
+# Generic flash target
+flash: flash-f421
+
+# F421 specific flash target
+flash-f421: $(F421_FIRMWARE)
+	@echo "======================================"
+	@echo "Flashing AM32 F421 (AT32F421C8T7)"
+	@echo "======================================"
+	@echo "Firmware: $(F421_FIRMWARE)"
+	@echo ""
+	@echo "erase" > $(OBJ)/flash_cmd.jlink
+	@echo "loadfile $(F421_FIRMWARE)" >> $(OBJ)/flash_cmd.jlink
+	@echo "verifyfile $(F421_FIRMWARE)" >> $(OBJ)/flash_cmd.jlink
+	@echo "r" >> $(OBJ)/flash_cmd.jlink
+	@echo "g" >> $(OBJ)/flash_cmd.jlink
+	@echo "exit" >> $(OBJ)/flash_cmd.jlink
+	JLinkExe -device AT32F421C8T7 -if SWD -speed 4000 -autoconnect 1 -commandFile $(OBJ)/flash_cmd.jlink
+	@echo ""
+	@echo "======================================"
+	@echo "Flash completed successfully!"
+	@echo "======================================"
+

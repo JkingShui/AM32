@@ -180,10 +180,15 @@ void DMA1_Channel5_4_IRQHandler(void)
  */
 void ADC1_CMP_IRQHandler(void)
 {
+  // INTERVAL_TIMER->cval 间隔定时器的当前计数值
+  // average_interval>>1 平均间隔的一半（相当于除以2）
+  // 如果当前时间已经超过换相间隔的一半，确保过零点检测发生在换相周期的后半段（避免误检测）
   if((INTERVAL_TIMER->cval) > ((average_interval>>1))){
+        // 清除外部中断标志
        EXINT->intsts = EXTI_LINE;
        interruptRoutine();
     }else{ 
+      // 如果还未到换相时间，只有检测到预期的沿方向才清除中断标志
       if (getCompOutputLevel() == rising){
         EXINT->intsts = EXTI_LINE;
     }
