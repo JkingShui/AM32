@@ -15,6 +15,11 @@
 #define RELOAD_WATCHDOG_COUNTER() (WDT->cmd = WDT_CMD_RELOAD)
 #define DISABLE_COM_TIMER_INT() (COM_TIMER->iden &= ~TMR_OVF_INT)
 #define ENABLE_COM_TIMER_INT() (COM_TIMER->iden |= TMR_OVF_INT)
+// 设置COM定时器中断时间并使能中断
+// COM_TIMER->cval = 0 ：重置定时器计数器值为0
+// 定时器将在计数达到 time 值时产生溢出中断
+// COM_TIMER->ists = 0x00 ：清除中断状态标志
+// COM_TIMER->iden |= TMR_OVF_INT ：启用定时器溢出中断
 #define SET_AND_ENABLE_COM_INT(time)                                    \
     (COM_TIMER->cval = 0, COM_TIMER->pr = time, COM_TIMER->ists = 0x00, \
         COM_TIMER->iden |= TMR_OVF_INT)
