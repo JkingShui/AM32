@@ -691,6 +691,8 @@
 #define CURRENT_ADC_PIN GPIO_PINS_3
 #define VOLTAGE_ADC_CHANNEL ADC_CHANNEL_6
 #define VOLTAGE_ADC_PIN GPIO_PINS_6
+// 经测试，如果开启在正弦启动结束到正常六步驱动阶段速度会很不自然
+// #define USE_STARTUP_BOOST// 开启启动 boost试试
 #endif
 
 #ifdef ZTW_A_F421
