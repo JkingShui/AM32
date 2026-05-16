@@ -1221,6 +1221,11 @@ void setInput()
                 }
             }
 
+            // 低电压保护：限制最大占空比
+            if (LOW_VOLTAGE_CUTOFF) {
+                duty_cycle_maximum = 500;
+            }
+
             // 最大占空比限制
             if (duty_cycle_setpoint > duty_cycle_maximum) {
                 duty_cycle_setpoint = duty_cycle_maximum;
@@ -1930,24 +1935,19 @@ int main(void)
                   }
                 }
             }
-            if (eepromBuffer.low_voltage_cut_off == 2 ){   // absolute cut off
-              if (battery_voltage <  eepromBuffer.absolute_voltage_cutoff) {
-                low_voltage_count++;    
+            if (eepromBuffer.low_voltage_cut_off == 2 ) {   // absolute cut off
+                // 原来的bug，absolute_voltage_cutoff记录的是1代表0.5mv
+                if (battery_voltage < (eepromBuffer.absolute_voltage_cutoff >> 1)  * 100) {
+                    low_voltage_count++;    
                 } else {
-                  if(!LOW_VOLTAGE_CUTOFF){
-                    low_voltage_count = 0;
-                  }
+                    if(!LOW_VOLTAGE_CUTOFF){
+                        low_voltage_count = 0;
+                    }
                 }
             }
 
-            if (low_voltage_count > (10000 - (stepper_sine * 9900))) {      // 10 second wait before cut-off for low voltage
+            if (low_voltage_count > 1000) {      // 10 second wait before cut-off for low voltage
               LOW_VOLTAGE_CUTOFF = 1;
-              input = 0;
-              allOff();
-              maskPhaseInterrupts();
-              running = 0;
-              zero_input_count = 0;
-              armed = 0;
              }
            
             PROCESS_ADC_FLAG = 0;
