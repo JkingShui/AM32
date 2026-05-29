@@ -1795,8 +1795,11 @@ int main(void)
         RELOAD_WATCHDOG_COUNTER();
 
         if (eepromBuffer.variable_pwm == 1) {      // uses range defined by pwm frequency setting
-            tim1_arr = map(commutation_interval, 96, 300, TIMER1_MAX_ARR / 2,
+            tim1_arr = map(commutation_interval, 96, 300, TIMER1_MAX_ARR >> 2,
                 TIMER1_MAX_ARR);
+            // 根据油门调节驱动频率
+            // tim1_arr = map(duty_cycle, 100, duty_cycle_maximum, TIMER1_MAX_ARR, TIMER1_MAX_ARR >> 2);
+
             // 如果是正弦波阶段，驱动频率低一些
             if (adjusted_input > 30 && adjusted_input < (eepromBuffer.sine_mode_changeover_thottle_level * 20)) {
                 tim1_arr = TIM1_AUTORELOAD;
@@ -1984,8 +1987,14 @@ int main(void)
               filter_level = 2;
             }
 
+            // 根据油门进角，增加turbo模式
             if (eepromBuffer.auto_advance) {
-              auto_advance_level = map(duty_cycle, 100, 2000, 12, 32);
+                // duty_cycle 95% 时，turbo模式开启
+                if (duty_cycle > duty_cycle_maximum * 0.95) {
+                    auto_advance_level = 32;
+                } else {
+                    auto_advance_level = map(duty_cycle, 100, 2000, 0, 2);
+                }
             }
 
             if (INTERVAL_TIMER_COUNT > 45000 && running == 1) {
