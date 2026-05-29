@@ -109,45 +109,9 @@ void DMA1_Channel1_IRQHandler(void)
     }
 }
 
-//void DMA1_Channel3_2_IRQHandler(void)
-//{
-//    if (dma_flag_get(DMA1_FDT2_FLAG) == SET) {
-//        DMA1->clr = DMA1_GL2_FLAG;
-//        DMA1_CHANNEL2->ctrl_bit.chen = FALSE;
-//    }
-//    if (dma_flag_get(DMA1_DTERR2_FLAG) == SET) {
-//        DMA1->clr = DMA1_GL2_FLAG;
-//        DMA1_CHANNEL2->ctrl_bit.chen = FALSE;
-//    }
-//}
 
 void DMA1_Channel5_4_IRQHandler(void)
 {
-#ifdef USE_TIMER_15_CHANNEL_1
-    if (dshot) {
-        DMA1->clr = DMA1_GL5_FLAG;
-        INPUT_DMA_CHANNEL->ctrl_bit.chen = FALSE;
-        transfercomplete();
-        EXINT->swtrg = EXINT_LINE_15;
-        return;
-    }
-    //    if (dma_flag_get(DMA1_HDT5_FLAG) == SET) {
-    //        if (servoPwm) {
-    //            IC_TIMER_REGISTER->cctrl_bit.c1p = TMR_INPUT_FALLING_EDGE;
-    //            DMA1->clr = DMA1_HDT5_FLAG;
-    //        }
-    //    }
-
-    if (dma_flag_get(DMA1_FDT5_FLAG) == SET) {
-        DMA1->clr = DMA1_GL5_FLAG;
-        INPUT_DMA_CHANNEL->ctrl_bit.chen = FALSE;
-        transfercomplete();
-        EXINT->swtrg = EXINT_LINE_15;
-    }
-    if (dma_flag_get(DMA1_DTERR5_FLAG) == SET) {
-        DMA1->clr = DMA1_GL5_FLAG;
-    }
-#endif
 #ifdef USE_TIMER_3_CHANNEL_1
     if (dshot) {
         DMA1->clr = DMA1_GL4_FLAG;
@@ -240,13 +204,77 @@ void USART1_IRQHandler(void)
     /* USER CODE END USART1_IRQn 1 */
 }
 
+static uint32_t capture_count = 0;
+static uint32_t capture_value_prev = 0;
+static uint32_t capture_period = 0;
+static uint32_t capture_high_time = 0;
+static uint8_t capture_state = 0;  /* 0: wait for rising edge, 1: wait for falling edge */
 void TMR3_GLOBAL_IRQHandler(void)
 {
+    uint32_t capture_value;
+    tmr_input_config_type tmr_input_struct;
+
     if ((TMR3->ists & TMR_C1_FLAG) != (uint16_t)RESET) {
         TMR3->ists = (uint16_t)~TMR_C1_FLAG;
     }
     if ((TMR3->ists & TMR_OVF_FLAG) != (uint16_t)RESET) {
         TMR3->ists = (uint16_t)~TMR_OVF_FLAG;
+    }
+
+    // pb5捕获
+    if(tmr_flag_get(TMR3, TMR_C2_FLAG) != RESET) {
+        capture_value = tmr_channel_value_get(TMR3, TMR_SELECT_CHANNEL_2);
+        
+        if(capture_state == 0)
+        {
+            /* Rising edge detected */
+            if(capture_count > 0)
+            {
+                /* Calculate period (time between two rising edges) */
+                if(capture_value > capture_value_prev)
+                {
+                    capture_period = capture_value - capture_value_prev;
+                }
+                else
+                {
+                    capture_period = (65536 - capture_value_prev) + capture_value;
+                }
+            }
+        
+            capture_value_prev = capture_value;
+            capture_count++;
+        
+            /* Switch to falling edge capture */
+            capture_state = 1;
+            tmr_input_struct.input_channel_select = TMR_SELECT_CHANNEL_2;
+            tmr_input_struct.input_mapped_select = TMR_CC_CHANNEL_MAPPED_DIRECT;
+            tmr_input_struct.input_polarity_select = TMR_INPUT_FALLING_EDGE;
+            tmr_input_struct.input_filter_value = 0x0A;
+            tmr_input_channel_init(TMR3, &tmr_input_struct, TMR_CHANNEL_INPUT_DIV_1);
+        } else {
+            /* Falling edge detected */
+            /* Calculate high time (time between rising and falling edge) */
+            if(capture_value > capture_value_prev)
+            {
+                capture_high_time = capture_value - capture_value_prev;
+            }
+            else
+            {
+                capture_high_time = (65536 - capture_value_prev) + capture_value;
+            }
+            
+            capture_value_prev = capture_value;
+            
+            /* Switch to rising edge capture */
+            capture_state = 0;
+            tmr_input_struct.input_channel_select = TMR_SELECT_CHANNEL_2;
+            tmr_input_struct.input_mapped_select = TMR_CC_CHANNEL_MAPPED_DIRECT;
+            tmr_input_struct.input_polarity_select = TMR_INPUT_RISING_EDGE;
+            tmr_input_struct.input_filter_value = 0x0A;
+            tmr_input_channel_init(TMR3, &tmr_input_struct, TMR_CHANNEL_INPUT_DIV_1);
+        }
+
+        tmr_flag_clear(TMR3, TMR_C2_FLAG);
     }
 }
 

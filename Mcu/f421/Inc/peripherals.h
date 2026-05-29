@@ -42,6 +42,7 @@ void system_clock_config(void);
 void MX_IWDG_Init(void);
 void TIM17_Init(void);
 void TIM14_Init(void);
+void TIM15_Init(void);
 void TIM16_Init(void);
 // static void MX_USART1_UART_Init(void);
 void resetInputCaptureTimer();
