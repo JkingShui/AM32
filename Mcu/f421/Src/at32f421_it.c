@@ -7,6 +7,7 @@
 #include "targets.h"
 #include "common.h"
 #include "comparator.h"
+#include "sensor_processor.h"
 
 
 extern void transfercomplete();
@@ -190,83 +191,46 @@ void TMR15_GLOBAL_IRQHandler(void)
     TMR15->ists = (uint16_t)~TMR_C1_FLAG;
 }
 
-/**
- * @brief This function handles USART1 global interrupt / USART1 wake-up
- * interrupt through EXTI line 25.
- */
-void USART1_IRQHandler(void)
-{
-    /* USER CODE BEGIN USART1_IRQn 0 */
+extern uint32_t pwm2_capture_high_time;
+extern volatile uint8_t pwm2_data_ready;
 
-    /* USER CODE END USART1_IRQn 0 */
-    /* USER CODE BEGIN USART1_IRQn 1 */
-
-    /* USER CODE END USART1_IRQn 1 */
-}
-
-static uint32_t capture_count = 0;
-static uint32_t capture_value_prev = 0;
-static uint32_t capture_period = 0;
-static uint32_t capture_high_time = 0;
-static uint8_t capture_state = 0;  /* 0: wait for rising edge, 1: wait for falling edge */
 void TMR3_GLOBAL_IRQHandler(void)
 {
-    uint32_t capture_value;
+    static uint32_t capture_value_prev = 0;
+    static uint8_t capture_state = 0;
     tmr_input_config_type tmr_input_struct;
 
-    if ((TMR3->ists & TMR_C1_FLAG) != (uint16_t)RESET) {
-        TMR3->ists = (uint16_t)~TMR_C1_FLAG;
-    }
     if ((TMR3->ists & TMR_OVF_FLAG) != (uint16_t)RESET) {
         TMR3->ists = (uint16_t)~TMR_OVF_FLAG;
     }
 
-    // pb5捕获
-    if(tmr_flag_get(TMR3, TMR_C2_FLAG) != RESET) {
-        capture_value = tmr_channel_value_get(TMR3, TMR_SELECT_CHANNEL_2);
-        
-        if(capture_state == 0)
-        {
-            /* Rising edge detected */
-            if(capture_count > 0)
-            {
-                /* Calculate period (time between two rising edges) */
-                if(capture_value > capture_value_prev)
-                {
-                    capture_period = capture_value - capture_value_prev;
-                }
-                else
-                {
-                    capture_period = (65536 - capture_value_prev) + capture_value;
-                }
-            }
-        
+    if ((TMR3->ists & TMR_C2_FLAG) != (uint16_t)RESET) {
+        uint32_t capture_value = tmr_channel_value_get(TMR3, TMR_SELECT_CHANNEL_2);
+
+        if (capture_state == 0) {
             capture_value_prev = capture_value;
-            capture_count++;
-        
-            /* Switch to falling edge capture */
             capture_state = 1;
+
             tmr_input_struct.input_channel_select = TMR_SELECT_CHANNEL_2;
             tmr_input_struct.input_mapped_select = TMR_CC_CHANNEL_MAPPED_DIRECT;
             tmr_input_struct.input_polarity_select = TMR_INPUT_FALLING_EDGE;
             tmr_input_struct.input_filter_value = 0x0A;
             tmr_input_channel_init(TMR3, &tmr_input_struct, TMR_CHANNEL_INPUT_DIV_1);
         } else {
-            /* Falling edge detected */
-            /* Calculate high time (time between rising and falling edge) */
-            if(capture_value > capture_value_prev)
-            {
-                capture_high_time = capture_value - capture_value_prev;
+            uint32_t high_time;
+            if (capture_value >= capture_value_prev) {
+                high_time = capture_value - capture_value_prev;
+            } else {
+                high_time = (65536 - capture_value_prev) + capture_value;
             }
-            else
-            {
-                capture_high_time = (65536 - capture_value_prev) + capture_value;
+
+            if (high_time > 500 && high_time < 3000) {
+                pwm2_capture_high_time = high_time;
+                pwm2_data_ready = 1;
             }
-            
-            capture_value_prev = capture_value;
-            
-            /* Switch to rising edge capture */
+
             capture_state = 0;
+
             tmr_input_struct.input_channel_select = TMR_SELECT_CHANNEL_2;
             tmr_input_struct.input_mapped_select = TMR_CC_CHANNEL_MAPPED_DIRECT;
             tmr_input_struct.input_polarity_select = TMR_INPUT_RISING_EDGE;
@@ -274,7 +238,15 @@ void TMR3_GLOBAL_IRQHandler(void)
             tmr_input_channel_init(TMR3, &tmr_input_struct, TMR_CHANNEL_INPUT_DIV_1);
         }
 
-        tmr_flag_clear(TMR3, TMR_C2_FLAG);
+        TMR3->ists = (uint16_t)~TMR_C2_FLAG;
+    }
+}
+
+
+void TMR17_GLOBAL_IRQHandler(void) {
+    if (TMR17->ists & TMR_OVF_FLAG) {
+        TMR17->ists = ~TMR_OVF_FLAG;
+        sensor_processor_update_gyro();
     }
 }
 
@@ -303,7 +275,7 @@ void EXINT15_4_IRQHandler(void)
 {
     exti_int++;
     if ((EXINT->intsts & EXINT_LINE_15) != (uint32_t)RESET) {
-        EXINT->intsts = EXINT_LINE_15;
+        EXINT->intsts |= EXINT_LINE_15;
         processDshot();
     }
 }

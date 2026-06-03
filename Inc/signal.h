@@ -12,7 +12,6 @@ extern char inputSet;
 extern char dshot;
 extern char servoPwm;
 extern char send_telemetry;
-extern char crawler_mode;
 
 extern uint16_t ADC_raw_volts;
 extern uint16_t servo_low_threshold; // anything below this point considered 0

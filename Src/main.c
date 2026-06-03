@@ -220,6 +220,7 @@ an settings option)
 #include "IO.h"
 #include "common.h"
 #include "comparator.h"
+#include "sensor_processor.h"
 #include "dshot.h"
 #include "eeprom.h"
 #include "functions.h"
@@ -230,6 +231,7 @@ an settings option)
 #include "signal.h"
 #include "sounds.h"
 #include "targets.h"
+#include "uart_print.h"
 #include <stdint.h>
 #include <string.h>
 #include <assert.h>
@@ -369,7 +371,6 @@ uint16_t reverse_speed_threshold = 1500;
 uint8_t desync_happened = 0;
 char maximum_throttle_change_ramp = 1;
 
-char crawler_mode = 0; // no longer used //
 uint16_t velocity_count = 0;
 uint16_t velocity_count_threshold = 75;
 
@@ -1036,7 +1037,8 @@ void setInput()
 
         // 如果比例制动未激活，映射输入值
         if (full_brake_active == 0) {
-            adjusted_input = map(newinput, 0, 1000 - (servo_dead_band << 1), 2047, 47);
+            // 反向限制油门
+            adjusted_input = map(newinput, 0, 1000 - (servo_dead_band << 1), 1000, 47);
         }
     }    
     
@@ -1725,15 +1727,7 @@ int main(void)
         saveEEpromSettings();
     }
     
-    if (eepromBuffer.dir_reversed == 1) {
-        forward = 0;
-    } else {
-        forward = 1;
-    }
     tim1_arr = TIMER1_MAX_ARR;
-    if (!eepromBuffer.comp_pwm) {
-        eepromBuffer.use_sine_start = 0; // sine start requires complementary pwm.
-    }
 
     if (eepromBuffer.rc_car_reverse) { // overrides a whole lot of things!
         throttle_max_at_low_rpm = 1000;// 低转速最大油门
@@ -1752,12 +1746,23 @@ int main(void)
         // stall_protect_minimum_duty = stall_protect_minimum_duty + 50;// 提高失速保护的最小占空比
         // min_startup_duty = min_startup_duty + 50;// 增加最小启动占空比，提高启动扭矩
     }
+    // 参数固定
+    eepromBuffer.dir_reversed = 0;// 正常方向
+    eepromBuffer.bi_direction = 1;// 正反向模式
+    eepromBuffer.use_sine_start = 1;// 允许正弦波启动
+    eepromBuffer.comp_pwm = 1;// 允许互补PWM
+    // TODO pwm频率暂定
+    eepromBuffer.stuck_rotor_protection = 1;// 开启堵转保护
+    eepromBuffer.brake_on_stop = 0;// 刹车有新的逻辑，不用根据这个参数
+    // TODO 测试有什么区别
+    eepromBuffer.stall_protection = 0;
+
 
     playStartupTune();
 
     zero_input_count = 0;
-    MX_IWDG_Init();
-    RELOAD_WATCHDOG_COUNTER();
+    // MX_IWDG_Init();
+    // RELOAD_WATCHDOG_COUNTER();
 
     // checkForHighSignal();     // will reboot if signal line is high for 10ms
     receiveDshotDma();
@@ -1774,6 +1779,31 @@ int main(void)
 #endif
 
     while (1) {
+        
+        // 检测全局中断状态
+        // static uint32_t irq_check_counter = 0;
+        // if (++irq_check_counter >= 10000) {
+        //     irq_check_counter = 0;
+            
+        //     uint32_t primask;
+        //     __asm volatile("MRS %0, PRIMASK" : "=r"(primask));
+            
+        //     uart_print_string("PRIMASK = ");
+        //     uart_print_number(primask);
+        //     uart_print_string(" (1=disabled, 0=enabled)\n");
+            
+        //     if (primask != 0) {
+        //         uart_print_string("ERROR: Global interrupt is disabled!\n");
+        //     }
+        // }
+        
+        // 传感器数据处理
+        sensor_processor_update_gyro();
+        sensor_processor_update_pwm_input();
+        sensor_processor_calculate();
+        sensor_processor_update_output();
+        
+        
         // COMMUTATION INTERVAL IS 0.5US INCREMENTS
         // 因为120Mhz，60分频，所以计数器1代表0.5us，周期 = 计数值/2，单位us
         e_com_time = ((commutation_intervals[0] + commutation_intervals[1] + commutation_intervals[2]
@@ -1828,6 +1858,7 @@ int main(void)
                 for (int i = 0; i < 64; i++) {
                     dma_buffer[i] = 0;
                 }
+                uart_print_string("Timeout!\n");
                 NVIC_SystemReset();
             }
             if (signaltimeout > LOOP_FREQUENCY_HZ << 1) { // 2 second when not armed
@@ -1841,6 +1872,7 @@ int main(void)
                 for (int i = 0; i < 64; i++) {
                     dma_buffer[i] = 0;
                 }
+                uart_print_string("Timeout 2!\n");
                 NVIC_SystemReset();
             }
         }
@@ -1862,22 +1894,20 @@ int main(void)
             bemf_timeout_happened = 0;
         }
 
-        if (crawler_mode) {
-            if (adjusted_input < 400) {
-                bemf_timeout_happened = 0;
-            }
+         
+        if (adjusted_input < 150) { // startup duty cycle should be low enough to not burn motor
+            bemf_timeout = 100;
         } else {
-            if (adjusted_input < 150) { // startup duty cycle should be low enough to not burn motor
-                bemf_timeout = 100;
-            } else {
-                bemf_timeout = 10;
-            }
+            // 高转时也让堵转时间长一些
+            bemf_timeout = 100;
         }
+        
 #endif
         average_interval = e_com_time / 3;
         if (desync_check && zero_crosses > 10) {
             if ((getAbsDif(last_average_interval, average_interval) > average_interval >> 1) && (average_interval < 2000)) { // throttle resitricted before zc 20.
                 zero_crosses = 0;
+                uart_print_string("Desync!\n");
                 desync_happened++;
                 if ((!eepromBuffer.bi_direction && (input > 47)) || commutation_interval > 1000) {
                     running = 0;

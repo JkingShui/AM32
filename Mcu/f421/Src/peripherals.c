@@ -21,6 +21,7 @@
 #include "WS2812.h"
 #endif
 #include "lsm6ds3.h"
+#include "sensor_processor.h"
 
 
 
@@ -32,27 +33,28 @@ void initCorePeripherals(void)
     MX_DMA_Init();
     // ABC三相电机控制
     TIM1_Init();
+    // 换相间隔时间定时器，用于控制换相的时间间隔
     TIM6_Init();
+    // 10kHz定时器，用于控制10kHz的PWM输出
     TIM14_Init();
     // 舵机输出pwm
     TIM15_Init();
     // 比较器初始化
     AT_COMP_Init();
-    // 
-    TIM17_Init();
-    TIM16_Init();
     lsm6ds3_init(I2C2);
-    // 输入捕获
+    // 定时读取陀螺仪（原本17用作rgb）17还作为delay定时器
+    TIM17_Init();
+    // 换相定时器，用于控制下次换相的时间（通过触发中断PeriodElapsedCallback换相）
+    TIM16_Init();
+    // 输入捕获（TMR3）
     UN_TIM_Init();
-#ifdef USE_SERIAL_TELEMETRY
-    telem_UART_Init();
-#endif
-#ifdef USE_LED_STRIP
-    WS2812_Init();
-#endif
-#ifdef USE_RGB_LED
-    LED_GPIO_init();
-#endif 
+    
+    // 陀螺仪传感器处理器
+    sensor_processor_init();
+
+    // 串口
+    uart_print_init(115200);
+    uart_print_string("uart initialized\n");
 }
 
 void initAfterJump(void) { __enable_irq(); }
@@ -83,10 +85,22 @@ void AT_COMP_Init(void)
 {
     crm_periph_clock_enable(CRM_GPIOA_PERIPH_CLOCK, TRUE);
     crm_periph_clock_enable(CRM_CMP_PERIPH_CLOCK, TRUE);
-    gpio_mode_QUICK(GPIOA, GPIO_MODE_ANALOG, GPIO_PULL_NONE, GPIO_PINS_1);
-    gpio_mode_QUICK(GPIOA, GPIO_MODE_ANALOG, GPIO_PULL_NONE, GPIO_PINS_5);
-    NVIC_SetPriority(ADC1_CMP_IRQn, 0);
+    gpio_mode_QUICK(GPIOA, GPIO_MODE_ANALOG, GPIO_PULL_NONE, GPIO_PINS_0);  // PA0 - 比较器输入
+    gpio_mode_QUICK(GPIOA, GPIO_MODE_ANALOG, GPIO_PULL_NONE, GPIO_PINS_1);  // PA1 - 比较器输入
+    gpio_mode_QUICK(GPIOA, GPIO_MODE_ANALOG, GPIO_PULL_NONE, GPIO_PINS_4);  // PA4 - 反电动势检测
+    gpio_mode_QUICK(GPIOA, GPIO_MODE_ANALOG, GPIO_PULL_NONE, GPIO_PINS_5);  // PA5 - 反电动势检测
+    
+    // 配置 EXTI_LINE_21（连接到比较器输出）
+    EXINT->inten |= EXINT_LINE_21;  // 使能 EXTI_LINE_21 中断
+    EXINT->polcfg1 |= EXINT_LINE_21;  // 使能上升沿触发
+    EXINT->polcfg2 |= EXINT_LINE_21;  // 使能下降沿触发（双边沿）
+    
+    NVIC_SetPriority(ADC1_CMP_IRQn, 3);  // 降低优先级，避免阻塞关键中断
     NVIC_EnableIRQ(ADC1_CMP_IRQn);
+    
+    // 配置比较器使用 1/4 VREFINT 作为参考
+    CMP->ctrlsts = 0x400000E1;  // PA0 作为正输入，1/4 VREFINT 作为负输入
+    
     cmp_enable(CMP1_SELECTION, TRUE);
 }
 
@@ -179,7 +193,7 @@ void TIM14_Init(void)
     TMR14->pr = 1000000 / LOOP_FREQUENCY_HZ;
     TMR14->div = 119;
 
-    NVIC_SetPriority(TMR14_GLOBAL_IRQn, 3);
+    NVIC_SetPriority(TMR14_GLOBAL_IRQn, 0);
     NVIC_EnableIRQ(TMR14_GLOBAL_IRQn);
 
     // TMR_Cmd(TMR14, ENABLE);
@@ -190,8 +204,6 @@ void TIM15_Init(void)
     gpio_init_type gpio_init_struct;
     tmr_output_config_type tmr_output_struct;
     tmr_brkdt_config_type tmr_brkdt_struct;
-    uint32_t prescaler;
-    uint32_t period;
     uint32_t ccr_value;
 
     crm_periph_clock_enable(CRM_TMR15_PERIPH_CLOCK, TRUE);
@@ -212,11 +224,7 @@ void TIM15_Init(void)
     tmr_repetition_counter_set(TMR15, 0);
     tmr_period_buffer_enable(TMR15, FALSE);
     
-    /* calculate period and prescaler for 333Hz */
-    prescaler = 119;
-    period = (120000000 / (prescaler + 1)) / 333 - 1;
-    
-    tmr_base_init(TMR15, period, prescaler);
+    tmr_base_init(TMR15, TIM15_PERIOD, TIM15_PRESCALER);
 
     /* configure primary mode settings */
     tmr_sub_sync_mode_set(TMR15, FALSE);
@@ -233,7 +241,7 @@ void TIM15_Init(void)
     tmr_output_channel_config(TMR15, TMR_SELECT_CHANNEL_1, &tmr_output_struct);
     
     /* set duty cycle */
-    ccr_value = (period + 1) * 20 / 100;// 先输出一个占空比测试
+    ccr_value = TIM15_MAX_CCR * 20 / 100;
     tmr_channel_value_set(TMR15, TMR_SELECT_CHANNEL_1, ccr_value);
     
     tmr_output_channel_buffer_enable(TMR15, TMR_SELECT_CHANNEL_1, FALSE);
@@ -283,6 +291,7 @@ void MX_DMA_Init(void)
 void MX_GPIO_Init(void) { }
 
 // 初始化定时器1和定时器3
+
 void UN_TIM_Init(void)
 {
     // PB4 油门输入
@@ -291,20 +300,26 @@ void UN_TIM_Init(void)
     gpio_mode_QUICK(INPUT_PIN_PORT, GPIO_MODE_MUX, GPIO_PULL_NONE, INPUT_PIN);
     gpio_pin_mux_config(INPUT_PIN_PORT, INPUT_PIN_SOURCE, GPIO_MUX_1);
 
-    //	RCC_AHBPeriphClockCmd(RCC_AHBPERIPH_DMA1,ENABLE);
+    // DMA1时钟使能
     crm_periph_clock_enable(CRM_DMA1_PERIPH_CLOCK, TRUE);
-    INPUT_DMA_CHANNEL->ctrl = 0X98a; //  PERIPHERAL HALF WORD, MEMROY WORD ,
-                                     //  MEMORY INC ENABLE , TC AND ERROR INTS
+
+    // PB4 DMA配置
+    INPUT_DMA_CHANNEL->paddr = (uint32_t)&IC_TIMER_REGISTER->c1dt;
+    INPUT_DMA_CHANNEL->maddr = (uint32_t)&dma_buffer;
+    INPUT_DMA_CHANNEL->dtcnt = buffersize;
+    INPUT_DMA_CHANNEL->ctrl = 0X98a;
     NVIC_SetPriority(IC_DMA_IRQ_NAME, 1);
     NVIC_EnableIRQ(IC_DMA_IRQ_NAME);
+
+    // 统一TIM3配置 (div=16, pr=0xFFFF)
     IC_TIMER_REGISTER->pr = 0xFFFF;
     IC_TIMER_REGISTER->div = 16;
     IC_TIMER_REGISTER->ctrl1_bit.prben = TRUE;
     IC_TIMER_REGISTER->ctrl1_bit.tmren = TRUE;
 
-    // PB5转向输入
+    // PB5转向输入配置 (TIM3_CH2 + 中断方式)
     gpio_init_type gpio_init_struct;
-    tmr_input_config_type  tmr_input_struct;
+    tmr_input_config_type tmr_input_struct;
 
     gpio_default_para_init(&gpio_init_struct);
 
@@ -312,20 +327,9 @@ void UN_TIM_Init(void)
     gpio_pin_mux_config(GPIOB, GPIO_PINS_SOURCE5, GPIO_MUX_1);
     gpio_init_struct.gpio_pins = GPIO_PINS_5;
     gpio_init_struct.gpio_mode = GPIO_MODE_MUX;
-    gpio_init_struct.gpio_out_type = GPIO_OUTPUT_PUSH_PULL;
-    gpio_init_struct.gpio_pull = GPIO_PULL_NONE;
+    gpio_init_struct.gpio_pull = GPIO_PULL_UP;
     gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_MODERATE;
     gpio_init(GPIOB, &gpio_init_struct);
-
-    /* TODO 这里时钟设置可能跟上面冲突，都是用的tmr3 */
-    tmr_cnt_dir_set(TMR3, TMR_COUNT_UP);
-    tmr_clock_source_div_set(TMR3, TMR_CLOCK_DIV1);
-    tmr_period_buffer_enable(TMR3, FALSE);
-    tmr_base_init(TMR3, 65535, 119);
-
-    /* configure primary mode settings */
-    tmr_sub_sync_mode_set(TMR3, FALSE);
-    tmr_primary_mode_select(TMR3, TMR_PRIMARY_SEL_RESET);
 
     /* configure channel 2 input settings for capture mode */
     tmr_input_struct.input_channel_select = TMR_SELECT_CHANNEL_2;
@@ -333,7 +337,50 @@ void UN_TIM_Init(void)
     tmr_input_struct.input_polarity_select = TMR_INPUT_RISING_EDGE;
     tmr_input_struct.input_filter_value = 0x0A;
     tmr_input_channel_init(TMR3, &tmr_input_struct, TMR_CHANNEL_INPUT_DIV_1);
+
     /* enable capture interrupt */
+    tmr_interrupt_enable(TMR3, TMR_C2_INT, TRUE);
+    NVIC_SetPriority(TMR3_GLOBAL_IRQn, 2);
+    NVIC_EnableIRQ(TMR3_GLOBAL_IRQn);
+    tmr_counter_enable(TMR3, TRUE);
+}
+
+void PB5_TMR3_CH2_Init(void)
+{
+    gpio_init_type gpio_init_struct;
+    tmr_input_config_type tmr_input_struct;
+
+    gpio_default_para_init(&gpio_init_struct);
+
+    gpio_pin_mux_config(GPIOB, GPIO_PINS_SOURCE5, GPIO_MUX_1);
+    gpio_init_struct.gpio_pins = GPIO_PINS_5;
+    gpio_init_struct.gpio_mode = GPIO_MODE_MUX;
+    gpio_init_struct.gpio_pull = GPIO_PULL_UP;
+    gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_MODERATE;
+    gpio_init(GPIOB, &gpio_init_struct);
+
+    tmr_input_struct.input_channel_select = TMR_SELECT_CHANNEL_2;
+    tmr_input_struct.input_mapped_select = TMR_CC_CHANNEL_MAPPED_DIRECT;
+    tmr_input_struct.input_polarity_select = TMR_INPUT_RISING_EDGE;
+    tmr_input_struct.input_filter_value = 0x0A;
+    tmr_input_channel_init(TMR3, &tmr_input_struct, TMR_CHANNEL_INPUT_DIV_1);
+
+    tmr_interrupt_enable(TMR3, TMR_C2_INT, TRUE);
+    NVIC_SetPriority(TMR3_GLOBAL_IRQn, 2);
+    NVIC_EnableIRQ(TMR3_GLOBAL_IRQn);
+    tmr_counter_enable(TMR3, TRUE);
+}
+
+void PB5_TMR3_CH2_Resume(void)
+{
+    tmr_input_config_type tmr_input_struct;
+
+    tmr_input_struct.input_channel_select = TMR_SELECT_CHANNEL_2;
+    tmr_input_struct.input_mapped_select = TMR_CC_CHANNEL_MAPPED_DIRECT;
+    tmr_input_struct.input_polarity_select = TMR_INPUT_RISING_EDGE;
+    tmr_input_struct.input_filter_value = 0x0A;
+    tmr_input_channel_init(TMR3, &tmr_input_struct, TMR_CHANNEL_INPUT_DIV_1);
+
     tmr_interrupt_enable(TMR3, TMR_C2_INT, TRUE);
     tmr_counter_enable(TMR3, TRUE);
 }

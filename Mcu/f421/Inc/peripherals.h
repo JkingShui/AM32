@@ -8,6 +8,9 @@
 #ifndef PERIPHERALS_H_
 #define PERIPHERALS_H_
 
+void PB5_TMR3_CH2_Init(void);
+void PB5_TMR3_CH2_Resume(void);
+
 #endif /* PERIPHERALS_H_ */
 
 #include "main.h"
@@ -28,6 +31,11 @@
 #define SET_AUTO_RELOAD_PWM(relval) (TMR1->pr = relval)
 #define SET_DUTY_CYCLE_ALL(newdc) \
     (TMR1->c1dt = newdc, TMR1->c2dt = newdc, TMR1->c3dt = newdc)
+
+// TIM15 PWM输出配置 (用于舵机控制)
+#define TIM15_PRESCALER     119
+#define TIM15_PERIOD        ((120000000 / (TIM15_PRESCALER + 1)) / 333 - 1)
+#define TIM15_MAX_CCR       (TIM15_PERIOD + 1)
 
 void initAfterJump(void);
 void initCorePeripherals(void);

@@ -12,6 +12,7 @@
 #include "functions.h"
 #include "serial_telemetry.h"
 #include "targets.h"
+#include "peripherals.h"
 
 char ic_timer_prescaler = CPU_FREQUENCY_MHZ / 7;
 uint32_t dma_buffer[64] = { 0 };
@@ -52,6 +53,8 @@ void receiveDshotDma()
     IC_TIMER_REGISTER->iden |= TMR_C1_DMA_REQUEST;
     IC_TIMER_REGISTER->ctrl1_bit.tmren = TRUE;
     INPUT_DMA_CHANNEL->ctrl = 0x0000098b;
+
+    PB5_TMR3_CH2_Resume();
 }
 
 void sendDshotDma()

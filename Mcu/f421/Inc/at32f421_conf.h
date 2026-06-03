@@ -136,6 +136,7 @@ extern "C" {
 #ifdef SCFG_MODULE_ENABLED
 #include "at32f421_scfg.h"
 #endif
+#include "uart_print.h"
 
 #ifdef __cplusplus
 }
