@@ -22,37 +22,15 @@ extern uint16_t ADC_raw_ntc;
 
 void ADC_DMA_Callback()
 { // read dma buffer and set extern variables
-#ifdef USE_ADC_INPUT
-    ADC_raw_temp = ADCDataDMA[3];
-    ADC_raw_volts = ADCDataDMA[1] / 2;
-    ADC_raw_current = ADCDataDMA[2];
-    ADC_raw_input = ADCDataDMA[0];
-#else
-  #ifdef USE_NTC
-    ADC_raw_ntc = ADCDataDMA[4];
     ADC_raw_temp = ADCDataDMA[3];
     ADC_raw_volts = ADCDataDMA[0];
     ADC_raw_current = ADCDataDMA[1];
-  #else
-    ADC_raw_temp = ADCDataDMA[3];
-    ADC_raw_volts = ADCDataDMA[0];
-    ADC_raw_current = ADCDataDMA[1];
-  #endif
-#endif
 }
 
 void ADC_Init(void)
 {
-#ifdef PA2_VOLTAGE
-    gpio_mode_QUICK(GPIOA, GPIO_MODE_ANALOG, GPIO_PULL_NONE, GPIO_PINS_2);
-#else
     gpio_mode_QUICK(GPIOA, GPIO_MODE_ANALOG, GPIO_PULL_NONE, CURRENT_ADC_PIN);
-#endif
     gpio_mode_QUICK(GPIOA, GPIO_MODE_ANALOG, GPIO_PULL_NONE, VOLTAGE_ADC_PIN);
-#ifdef USE_NTC
-    gpio_mode_QUICK(GPIOA, GPIO_MODE_ANALOG, GPIO_PULL_NONE, NTC_ADC_PIN);
-#endif 
-
 
 	dma_init_type dma_init_struct;
     crm_periph_clock_enable(CRM_DMA1_PERIPH_CLOCK, TRUE);

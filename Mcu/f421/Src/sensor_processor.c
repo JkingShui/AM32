@@ -6,6 +6,9 @@
 #include "uart_print.h"
 
 static sensor_data_t sensor_data;
+extern uint16_t ADC_raw_volts;
+extern uint16_t ADCDataDMA[4];
+extern uint16_t ADC_raw_current;
 
 volatile uint8_t pwm2_data_ready = 0;
 uint32_t pwm2_capture_high_time = 0;
@@ -48,7 +51,8 @@ void sensor_processor_calculate(void) {
     // 每隔100ms输出一次 input_gyro    
     if (++times >= 1000) {  // 100ms = 100000us
         times = 0;
-        uart_print_number((int32_t)(this_time - last_time));
+        // uart_print_number((int32_t)(this_time - last_time));
+        uart_print_number((ADC_raw_volts * 3300 / 4095 * 11) / 100);
         uart_print_string("\n");
     }
     last_time = this_time;

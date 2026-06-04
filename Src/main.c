@@ -1756,6 +1756,8 @@ int main(void)
     eepromBuffer.brake_on_stop = 0;// 刹车有新的逻辑，不用根据这个参数
     // TODO 测试有什么区别
     eepromBuffer.stall_protection = 0;
+    eepromBuffer.low_voltage_cut_off = 2;// 电压限制
+    eepromBuffer.absolute_voltage_cutoff = 12;// 6v
 
 
     playStartupTune();
@@ -1953,6 +1955,7 @@ int main(void)
             converted_degrees = getConvertedDegrees(ADC_raw_temp);
 
             degrees_celsius = converted_degrees;
+            // ADC_raw_volts 4095原始值，VOLTAGE_DIVIDER 电阻分压系数
             battery_voltage = ((7 * battery_voltage) + ((ADC_raw_volts * 3300 / 4095 * VOLTAGE_DIVIDER) / 100)) >> 3;
             smoothed_raw_current = getSmoothedCurrent();
             actual_current = ((smoothed_raw_current * 3300 / 41) - (CURRENT_OFFSET * 100)) / (MILLIVOLT_PER_AMP);
@@ -1970,7 +1973,7 @@ int main(void)
             }
             if (eepromBuffer.low_voltage_cut_off == 2 ) {   // absolute cut off
                 // 原来的bug，absolute_voltage_cutoff记录的是1代表0.5mv
-                if (battery_voltage < (eepromBuffer.absolute_voltage_cutoff >> 1)  * 100) {
+                if (battery_voltage < (eepromBuffer.absolute_voltage_cutoff >> 1)  * 10) {
                     low_voltage_count++;    
                 } else {
                     if(!LOW_VOLTAGE_CUTOFF){
