@@ -20,6 +20,7 @@ void sensor_processor_init(void) {
     sensor_data.output_pwm = 0;
 }
 
+// TODO 降低更新频率，降低的值还需要确定
 int32_t update_times = 0;
 void sensor_processor_update_gyro(void) {
     if (++update_times >= 100) {
@@ -45,14 +46,18 @@ void sensor_processor_update_pwm_input(void) {
 int32_t times = 0;
 uint32_t last_time;
 void sensor_processor_calculate(void) {
-    // float input_gyro = sensor_data.gyro_z_dps;
+    float input_gyro = sensor_data.gyro_z_dps;
     uint32_t this_time = INTERVAL_TIMER_COUNT;
     
+
     // 每隔100ms输出一次 input_gyro    
     if (++times >= 1000) {  // 100ms = 100000us
         times = 0;
-        // uart_print_number((int32_t)(this_time - last_time));
-        uart_print_number((ADC_raw_volts * 3300 / 4095 * 11) / 100);
+        if (this_time > last_time) {
+            // uart_print_number((int32_t)(this_time - last_time));
+        }
+        
+        uart_print_number(input_gyro);
         uart_print_string("\n");
     }
     last_time = this_time;

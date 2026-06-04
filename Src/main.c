@@ -1333,25 +1333,11 @@ void tenKhzRoutine()
         }
     }
 
-    // 处理遥测数据发送
-    if (eepromBuffer.telemetry_on_interval) {
-        telem_ms_count++;
-        // 根据遥测间隔和标识符计算发送时机
-        if (telem_ms_count > ((telemetry_interval_ms - 1 + eepromBuffer.telemetry_on_interval) * 20)) {
-            // telemetry_on_interval = 1 是布尔值，但也可以是2或更大的值作为标识符
-            // 通过使用略有不同的间隔和唯一标识符，保证多个ESC可以在同一信号线上通信
-            // 会有一些冲突，但不会像两个ESC总是同时尝试通信那样多
-            send_telemetry = 1;
-            telem_ms_count = 0;
-        }
-    }
 
     // 无刷模式下的BEMF检测
     if (!stepper_sine) {// 用于标识电机是否处于 正弦步进启动模式 。
-#ifndef CUSTOM_RAMP
         // 轮询模式且电机运行时
         if (old_routine && running) {
-	//			send_LED_RGB(255, 0, 0);
             // 屏蔽相位中断
             maskPhaseInterrupts();
             // 获取BEMF状态
@@ -1374,27 +1360,12 @@ void tenKhzRoutine()
                 }
             }
         }
-#endif
+
         // 1kHz PID控制循环
         if (one_khz_loop_counter > PID_LOOP_DIVIDER) { // 1khz PID loop
             // 设置ADC处理标志，在低优先级下执行新的ADC读取
             PROCESS_ADC_FLAG = 1; // set flag to do new adc read at lower priority
             one_khz_loop_counter = 0;
-            
-            // 电流限制处理
-            if (use_current_limit && running) {
-                // 计算电流PID控制器输出并调整电流限制
-                use_current_limit_adjust -= (int16_t)(doPidCalculations(&currentPid, actual_current,
-                                                          eepromBuffer.limits.current * 2 * 100)
-                    / 10000);
-                // 限制电流限制调整值范围
-                if (use_current_limit_adjust < minimum_duty_cycle) {
-                    use_current_limit_adjust = minimum_duty_cycle;
-                }
-                if (use_current_limit_adjust > 2000) {
-                    use_current_limit_adjust = 2000;
-                }
-            }
             
             // 失速保护调整（用于攀爬车和RC车，不建议多旋翼使用）
             if (eepromBuffer.stall_protection && running) { // this boosts throttle as the rpm gets lower, for crawlers
@@ -1410,23 +1381,7 @@ void tenKhzRoutine()
                     stall_protection_adjust = 0;
                 }
             }
-            
-            // 速度控制处理
-            if (use_speed_control_loop && running) {
-                // 计算速度PID控制器输出并调整输入覆盖值
-                input_override += doPidCalculations(&speedPid, e_com_time, target_e_com_time);
-                // 限制输入覆盖值范围
-                if (input_override > 2047 * 10000) {
-                    input_override = 2047 * 10000;
-                }
-                if (input_override < 0) {
-                    input_override = 0;
-                }
-                // 零交叉次数小于100时，重置速度PID积分项
-                if (zero_crosses < 100) {
-                    speedPid.integral = 0;
-                }
-            }
+         
         }
         
         // 油门斜率控制
@@ -1834,7 +1789,8 @@ int main(void)
 
             // 如果是正弦波阶段，驱动频率低一些
             if (adjusted_input > 30 && adjusted_input < (eepromBuffer.sine_mode_changeover_thottle_level * 20)) {
-                tim1_arr = TIM1_AUTORELOAD;
+                // TODO 频率暂定
+                // tim1_arr = TIM1_AUTORELOAD;
             }
         }
         if (eepromBuffer.variable_pwm == 2) {      // uses automatic range   
@@ -1952,6 +1908,7 @@ int main(void)
         if (PROCESS_ADC_FLAG == 1) { // for adc and telemetry set adc counter at 1khz loop rate
             ADC_DMA_Callback();
             adc_ordinary_software_trigger_enable(ADC1, TRUE);
+            // TODO 过温保护
             converted_degrees = getConvertedDegrees(ADC_raw_temp);
 
             degrees_celsius = converted_degrees;
@@ -2047,18 +2004,23 @@ int main(void)
 
                 if (input > 48 && input < 137) { // sine wave stepper
 
-                    if (do_once_sinemode) {
-                        // disable commutation interrupt in case set
-                        DISABLE_COM_TIMER_INT();
-                        maskPhaseInterrupts();
-                        SET_DUTY_CYCLE_ALL(0);
-                        allpwm();
-                        do_once_sinemode = 0;
+                    static uint16_t delay_last_time;
+                    if (UTILITY_TIMER->cval - delay_last_time > step_delay) {
+                        if (do_once_sinemode) {
+                            // disable commutation interrupt in case set
+                            DISABLE_COM_TIMER_INT();
+                            maskPhaseInterrupts();
+                            SET_DUTY_CYCLE_ALL(0);
+                            allpwm();
+                            do_once_sinemode = 0;
+                        }
+                        advanceincrement();
+                        step_delay = map(input, 48, 120, 7000 / eepromBuffer.motor_poles, 810 / eepromBuffer.motor_poles);
+                        // delayMicros(step_delay);
+                        // 用非阻塞方法delay
+                        delay_last_time = UTILITY_TIMER->cval;
+                        e_rpm = 600 / step_delay; // in hundreds so 33 e_rpm is 3300 actual erpm
                     }
-                    advanceincrement();
-                    step_delay = map(input, 48, 120, 7000 / eepromBuffer.motor_poles, 810 / eepromBuffer.motor_poles);
-                    delayMicros(step_delay);
-                    e_rpm = 600 / step_delay; // in hundreds so 33 e_rpm is 3300 actual erpm
 
                 } else {
                     do_once_sinemode = 1;

@@ -12,7 +12,8 @@
 uint8_t getCompOutputLevel() { return CMP->ctrlsts_bit.cmpvalue; }
 
 /**
- * @brief 禁用 指定中断线的中断功能，防止换相时触发中断
+ * @brief 比较器中断
+ * 禁用 指定中断线的中断功能，防止换相时触发中断
  * 
  * 该函数用于禁用比较器中断，防止在比较器输出电平变化时触发中断。
  */
@@ -23,6 +24,10 @@ void maskPhaseInterrupts()
     EXINT->intsts = EXTI_LINE;
 }
 
+/**
+ * @brief 比较器中断
+ * 启用比较器中断
+ */
 void enableCompInterrupts() { EXINT->inten |= EXTI_LINE; }
 
 void changeCompInput()

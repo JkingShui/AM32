@@ -16,6 +16,7 @@ void PB5_TMR3_CH2_Resume(void);
 #include "main.h"
 #define INTERVAL_TIMER_COUNT (INTERVAL_TIMER->cval)
 #define RELOAD_WATCHDOG_COUNTER() (WDT->cmd = WDT_CMD_RELOAD)
+// 倒计时换相定时器
 #define DISABLE_COM_TIMER_INT() (COM_TIMER->iden &= ~TMR_OVF_INT)
 #define ENABLE_COM_TIMER_INT() (COM_TIMER->iden |= TMR_OVF_INT)
 // 设置COM定时器中断时间并使能中断

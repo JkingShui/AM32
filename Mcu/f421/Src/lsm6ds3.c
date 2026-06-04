@@ -57,7 +57,7 @@ uint8_t lsm6ds3_init(i2c_type *i2c_v)
     i2c_config(&hi2cx);
 
     wk_i2c2_init();
-    i2c_memory_read(&hi2cx, I2C_MEM_ADDR_WIDIH_8, LSM6DS3_I2C_ADDR, LSM6DS3_WHO_AM_I, &who_am_i, 1, 0xFFFFFF);
+    i2c_memory_read(&hi2cx, I2C_MEM_ADDR_WIDIH_8, LSM6DS3_I2C_ADDR, LSM6DS3_WHO_AM_I, &who_am_i, 1, 10000);
 
     if(who_am_i != 0x69)
     {
@@ -67,16 +67,16 @@ uint8_t lsm6ds3_init(i2c_type *i2c_v)
     uint8_t ctrl1_xl = 0x60;
     uint8_t ctrl2_g = 0x4C;
     uint8_t ctrl3_c = 0x04;
-    i2c_memory_write(&hi2cx, I2C_MEM_ADDR_WIDIH_8, LSM6DS3_I2C_ADDR, LSM6DS3_CTRL1_XL, &ctrl1_xl, 1, 0xFFFFFF);
-    i2c_memory_write(&hi2cx, I2C_MEM_ADDR_WIDIH_8, LSM6DS3_I2C_ADDR, LSM6DS3_CTRL2_G, &ctrl2_g, 1, 0xFFFFFF);
-    i2c_memory_write(&hi2cx, I2C_MEM_ADDR_WIDIH_8, LSM6DS3_I2C_ADDR, LSM6DS3_CTRL3_C, &ctrl3_c, 1, 0xFFFFFF);
+    i2c_memory_write(&hi2cx, I2C_MEM_ADDR_WIDIH_8, LSM6DS3_I2C_ADDR, LSM6DS3_CTRL1_XL, &ctrl1_xl, 1, 10000);
+    i2c_memory_write(&hi2cx, I2C_MEM_ADDR_WIDIH_8, LSM6DS3_I2C_ADDR, LSM6DS3_CTRL2_G, &ctrl2_g, 1, 10000);
+    i2c_memory_write(&hi2cx, I2C_MEM_ADDR_WIDIH_8, LSM6DS3_I2C_ADDR, LSM6DS3_CTRL3_C, &ctrl3_c, 1, 10000);
 
     gyro_z_offset = 0;
     for(i = 0; i < 10; i++)
     {
         uint8_t buf[2];
         // lsm6ds3_i2c_read(LSM6DS3_OUTZ_L_G, buf, 2);
-        i2c_memory_read(&hi2cx, I2C_MEM_ADDR_WIDIH_8, LSM6DS3_I2C_ADDR, LSM6DS3_OUTZ_L_G, buf, 2, 0xFFFFFF);
+        i2c_memory_read(&hi2cx, I2C_MEM_ADDR_WIDIH_8, LSM6DS3_I2C_ADDR, LSM6DS3_OUTZ_L_G, buf, 2, 10000);
 
         gyro_z_offset += (int16_t)(buf[1] << 8 | buf[0]);
     }
@@ -89,7 +89,7 @@ uint8_t lsm6ds3_read_gyro_z(int16_t *z_data)
 {
     uint8_t buf[2] = {0};
 
-    i2c_status_type status = i2c_memory_read(&hi2cx, I2C_MEM_ADDR_WIDIH_8, LSM6DS3_I2C_ADDR, LSM6DS3_OUTZ_L_G, buf, 2, 0xFFFFFF);
+    i2c_status_type status = i2c_memory_read(&hi2cx, I2C_MEM_ADDR_WIDIH_8, LSM6DS3_I2C_ADDR, LSM6DS3_OUTZ_L_G, buf, 2, 10000);
     if(status != I2C_OK)
     {
         return 2;
