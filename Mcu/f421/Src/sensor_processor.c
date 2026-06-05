@@ -26,12 +26,18 @@ void sensor_processor_update_gyro(void) {
     if (++update_times >= 100) {
         update_times = 0;
         uint8_t ret = lsm6ds3_read_gyro_z(&sensor_data.gyro_z);
-        if(ret != 1)
+        if(ret == 1)
         {
+            sensor_data.gyro_z_dps = lsm6ds3_convert_to_dps(sensor_data.gyro_z) * (180.0f / 3.1415926f);
+        } else if(ret == 0)
+        {
+            // 0代表等待中，不处理
+        } else
+        {
+            // 其他错误码，设置为0
             sensor_data.gyro_z_dps = 0.0f;
-            return;
         }
-        sensor_data.gyro_z_dps = lsm6ds3_convert_to_dps(sensor_data.gyro_z) * (180.0f / 3.1415926f);
+        
     }
     
 }
@@ -55,6 +61,7 @@ void sensor_processor_calculate(void) {
         times = 0;
         if (this_time > last_time) {
             // uart_print_number((int32_t)(this_time - last_time));
+            // uart_print_string("\n");
         }
         
         uart_print_number(input_gyro);

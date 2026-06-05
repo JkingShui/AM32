@@ -8,7 +8,7 @@
 #include "common.h"
 #include "comparator.h"
 #include "sensor_processor.h"
-
+#include "i2c_application.h"
 
 extern void transfercomplete();
 extern void PeriodElapsedCallback();
@@ -24,7 +24,10 @@ extern char send_telemetry;
 extern char telemetry_done;
 extern char servoPwm;
 extern char dshot;
+extern uint16_t gyro_buf;
+extern uint8_t buf_arry[2];
 int exti_int = 0;
+extern i2c_handle_type hi2cx;
 
 void HardFault_Handler(void)
 {
@@ -137,6 +140,18 @@ void DMA1_Channel5_4_IRQHandler(void)
         DMA1->clr = DMA1_GL4_FLAG;
     }
 #endif
+
+    i2c_dma_rx_irq_handler(&hi2cx);
+}
+
+void I2C2_EVT_IRQHandler(void)
+{
+  i2c_evt_irq_handler(&hi2cx);
+}
+
+void I2C2_ERR_IRQHandler(void)
+{
+  i2c_err_irq_handler(&hi2cx);
 }
 
 /**

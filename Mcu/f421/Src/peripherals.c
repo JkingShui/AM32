@@ -31,6 +31,9 @@ void initCorePeripherals(void)
 
     MX_GPIO_Init();
     MX_DMA_Init();
+    // 串口
+    uart_print_init(115200);
+    uart_print_string("uart initialized\n");
     // ABC三相电机控制
     TIM1_Init();
     // 换相间隔时间定时器，用于控制换相的时间间隔
@@ -41,7 +44,7 @@ void initCorePeripherals(void)
     TIM15_Init();
     // 比较器初始化
     AT_COMP_Init();
-    lsm6ds3_init(I2C2);
+    lsm6ds3_init();
     // 定时读取陀螺仪（原本17用作rgb）17还作为delay定时器
     TIM17_Init();
     // 换相定时器，用于控制下次换相的时间（通过触发中断PeriodElapsedCallback换相）
@@ -52,9 +55,6 @@ void initCorePeripherals(void)
     // 陀螺仪传感器处理器
     sensor_processor_init();
 
-    // 串口
-    uart_print_init(115200);
-    uart_print_string("uart initialized\n");
 }
 
 void initAfterJump(void) { __enable_irq(); }

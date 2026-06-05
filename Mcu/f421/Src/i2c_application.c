@@ -60,11 +60,6 @@
  ((uint32_t)(DMA_CHANNEL) == ((uint32_t)DMA1_CHANNEL4))? DMA1_DTERR4_FLAG : \
                                                          DMA1_DTERR5_FLAG)
 
-/**
-  * @brief i2c transmission status
-  */
-#define I2C_START                        0
-#define I2C_END                          1
 
 /**
   * @brief  initializes peripherals used by the i2c.

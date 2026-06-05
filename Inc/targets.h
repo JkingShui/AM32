@@ -5212,7 +5212,9 @@
 #ifdef MCU_AT421
 #define ARTERY
 #define CPU_FREQUENCY_MHZ 120
-#define EEPROM_START_ADD (uint32_t)0x08007C00
+// #define EEPROM_START_ADD (uint32_t)0x08007C00
+// 内存不够改大，所以eeprom也要移动
+#define EEPROM_START_ADD (uint32_t)0x0800F800
 #define INTERVAL_TIMER TMR6
 #define TEN_KHZ_TIMER TMR14
 #define UTILITY_TIMER TMR17

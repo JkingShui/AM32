@@ -52,6 +52,17 @@ extern "C" {
   * @}
   */
 
+/** @defgroup I2C_library_transmission_status
+  * @{
+  */
+
+#define I2C_START                        0    /*!< i2c transmission start */
+#define I2C_END                          1    /*!< i2c transmission end */
+
+/**
+  * @}
+  */
+
 /** @defgroup I2C_library_memory_address_width_mode
   * @{
   */

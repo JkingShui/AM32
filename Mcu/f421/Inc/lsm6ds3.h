@@ -15,7 +15,7 @@ extern "C" {
 #define LSM6DS3_CTRL3_C     0x12
 #define LSM6DS3_OUTZ_L_G    0x26
 
-uint8_t lsm6ds3_init(i2c_type *i2c_v);
+uint8_t lsm6ds3_init();
 uint8_t lsm6ds3_read_gyro_z(int16_t *z_data);
 float lsm6ds3_convert_to_dps(int16_t raw);
 
