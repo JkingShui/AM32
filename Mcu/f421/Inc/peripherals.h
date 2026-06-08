@@ -64,3 +64,12 @@ void generatePwmTimerEvent(void);
 void UN_TIM_Init(void);
 void LED_GPIO_init(void);
 void setIndividualRGBLed(uint8_t red, uint8_t green, uint8_t blue);
+
+// 按钮和LED函数
+void button_led_init(void);
+uint8_t button_read(void);
+void led_set(uint8_t state);
+
+// Flash 保护函数
+flash_status_type flash_fap_high_level_protection_enable(void);
+flash_status_type flash_fap_high_level_protection_disable(void);

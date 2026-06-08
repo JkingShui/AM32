@@ -17,6 +17,7 @@
 #include "functions.h"
 #include "serial_telemetry.h"
 #include "targets.h"
+#include "at32f421_flash.h"
 #ifdef USE_LED_STRIP
 #include "WS2812.h"
 #endif
@@ -54,6 +55,21 @@ void initCorePeripherals(void)
     
     // 陀螺仪传感器处理器
     sensor_processor_init();
+    
+    // 按钮和LED初始化
+    button_led_init();
+    
+    // 启用 Flash 高级别读保护
+    // 注意：启用后将无法通过调试器连接，需要解除保护（会擦除Flash）
+    // 建议通过条件编译或特定条件控制是否启用
+#ifdef ENABLE_FLASH_PROTECTION
+    flash_status_type status = flash_fap_high_level_protection_enable();
+    if (status == FLASH_OPERATE_DONE) {
+        uart_print_string("Flash protection enabled\n");
+    } else {
+        uart_print_string("Flash protection failed\n");
+    }
+#endif
 
 }
 
@@ -485,4 +501,98 @@ void enableCorePeripherals()
 #ifdef USE_PULSE_OUT
  gpio_mode_QUICK(GPIOB, GPIO_MODE_OUTPUT, GPIO_PULL_NONE, GPIO_PINS_8);
 #endif
+}
+
+/**
+ * @brief 按钮和LED初始化
+ * @note PB3 - 按钮输入（上拉）
+ *       PA15 - LED输出
+ */
+void button_led_init(void)
+{
+    crm_periph_clock_enable(CRM_GPIOB_PERIPH_CLOCK, TRUE);
+    crm_periph_clock_enable(CRM_GPIOA_PERIPH_CLOCK, TRUE);
+    
+    // PB3 按钮输入，上拉
+    gpio_mode_QUICK(GPIOB, GPIO_MODE_INPUT, GPIO_PULL_UP, GPIO_PINS_3);
+    
+    // PA15 LED输出
+    gpio_mode_QUICK(GPIOA, GPIO_MODE_OUTPUT, GPIO_PULL_NONE, GPIO_PINS_15);
+    
+    // 默认LED关闭
+    led_set(0);
+}
+
+/**
+ * @brief 读取按键电平
+ * @return 1 - 按键按下（低电平）
+ *         0 - 按键释放（高电平）
+ */
+uint8_t button_read(void)
+{
+    // 按键按下时为低电平，返回1表示按下
+    return (gpio_input_data_bit_read(GPIOB, GPIO_PINS_3) == RESET) ? 1 : 0;
+}
+
+/**
+ * @brief 设置LED状态
+ * @param state: 1 - LED亮
+ *               0 - LED灭
+ */
+void led_set(uint8_t state)
+{
+    if (state) {
+        GPIOA->clr = GPIO_PINS_15;  // 低电平点亮
+    } else {
+        GPIOA->scr = GPIO_PINS_15;  // 高电平熄灭
+    }
+}
+
+/**
+ * @brief 启用 Flash 高级别读保护（FAP High Level）
+ * @note 启用后将禁止调试器访问和读取 Flash 内容
+ *       解除保护会擦除整个 Flash
+ * @retval FLASH_OPERATE_DONE - 成功
+ *         FLASH_OPERATE_TIMEOUT - 超时
+ *         FLASH_PROGRAM_ERROR - 编程错误
+ *         FLASH_EPP_ERROR - 保护错误
+ */
+flash_status_type flash_fap_high_level_protection_enable(void)
+{
+    flash_status_type status;
+    
+    // 解锁 FLASH
+    flash_unlock();
+    
+    // 启用 FAP 高级别保护
+    status = flash_fap_high_level_enable(TRUE);
+    
+    // 锁定 FLASH
+    flash_lock();
+    
+    return status;
+}
+
+/**
+ * @brief 禁用 Flash 高级别读保护（FAP High Level）
+ * @note 禁用保护将擦除整个 Flash 内容
+ * @retval FLASH_OPERATE_DONE - 成功
+ *         FLASH_OPERATE_TIMEOUT - 超时
+ *         FLASH_PROGRAM_ERROR - 编程错误
+ *         FLASH_EPP_ERROR - 保护错误
+ */
+flash_status_type flash_fap_high_level_protection_disable(void)
+{
+    flash_status_type status;
+    
+    // 解锁 FLASH
+    flash_unlock();
+    
+    // 禁用 FAP 高级别保护
+    status = flash_fap_high_level_enable(FALSE);
+    
+    // 锁定 FLASH
+    flash_lock();
+    
+    return status;
 }

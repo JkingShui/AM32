@@ -57,7 +57,7 @@ void sensor_processor_calculate(void) {
     
 
     // 每隔100ms输出一次 input_gyro    
-    if (++times >= 1000) {  // 100ms = 100000us
+    if (++times >= 10000) {  // 100ms = 100000us
         times = 0;
         if (this_time > last_time) {
             // uart_print_number((int32_t)(this_time - last_time));
@@ -66,6 +66,9 @@ void sensor_processor_calculate(void) {
         
         uart_print_number(input_gyro);
         uart_print_string("\n");
+
+        uint8_t button_state = button_read();
+        led_set(button_state);
     }
     last_time = this_time;
     

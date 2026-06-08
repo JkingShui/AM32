@@ -36,6 +36,10 @@
 // #define GD32SKYSTARS40
 #endif
 
+// TODO Flash 读保护选项
+// 启用后将无法通过调试器连接，需要解除保护（会擦除Flash）
+// #define ENABLE_FLASH_PROTECTION
+
 // used to hold a port/pin in a single 16 bit integer
 #define GPIO_PORT_PIN(portnum, pinnum) ((portnum)<<8|(pinnum))
 

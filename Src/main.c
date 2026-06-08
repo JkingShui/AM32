@@ -482,6 +482,7 @@ uint16_t readings[50];
 
 uint8_t bemf_timeout_happened = 0;
 uint8_t changeover_step = 5;
+// 比较器中断滤波值
 uint8_t filter_level = 5;
 // 电机是否运行中
 uint8_t running = 0;
@@ -1225,7 +1226,7 @@ void setInput()
 
             // 低电压保护：限制最大占空比
             if (LOW_VOLTAGE_CUTOFF) {
-                duty_cycle_maximum = 500;
+                duty_cycle_maximum = 300;
             }
 
             // 最大占空比限制
@@ -1667,6 +1668,15 @@ static void checkDeviceInfo(void)
 
 }
 
+/**
+ * TODO 
+ * 1.pid
+ * 2.epa epprom保存
+ * 3.led灯提示
+ * 4.按钮功能
+ * 5.flash保护功能 ENABLE_FLASH_PROTECTION
+ * 6.nvic优先级设置
+ */
 int main(void)
 {
     initAfterJump();
@@ -1713,6 +1723,8 @@ int main(void)
     eepromBuffer.stall_protection = 0;
     eepromBuffer.low_voltage_cut_off = 2;// 电压限制
     eepromBuffer.absolute_voltage_cutoff = 12;// 6v
+    // TODO 温度限制暂定
+    eepromBuffer.limits.temperature = 60;// 温度限制，单位摄氏度
 
 
     playStartupTune();
@@ -1965,8 +1977,9 @@ int main(void)
             }
 
             if (degrees_celsius > eepromBuffer.limits.temperature) {
-              duty_cycle_maximum = map(degrees_celsius, eepromBuffer.limits.temperature - 10, eepromBuffer.limits.temperature + 10,
-                throttle_max_at_high_rpm / 2, 1);
+            //   duty_cycle_maximum = map(degrees_celsius, eepromBuffer.limits.temperature - 10, eepromBuffer.limits.temperature + 10,
+            //     throttle_max_at_high_rpm / 2, 1);
+                LOW_VOLTAGE_CUTOFF = 1;
             }
             if (zero_crosses < 100 && commutation_interval > 500) {
               filter_level = 12;
