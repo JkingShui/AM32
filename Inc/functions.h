@@ -20,6 +20,6 @@ void gpio_mode_QUICK(gpio_type* gpio_periph, uint32_t mode,
     uint32_t pull_up_down, uint32_t pin);
 void gpio_mode_set(gpio_type* gpio_periph, uint32_t mode, uint32_t pull_up_down,
     uint32_t pin);
-uint8_t sgn(uint32_t x);
+int sgn(int x);
 #endif
 #endif /* FUNCTIONS_H_ */

@@ -6,6 +6,8 @@
 #include "uart_print.h"
 #include "functions.h"
 
+extern int32_t smoothed_raw_current;
+
 /**
  * @brief 获取当前时间与上次时间的间隔（微秒）
  * 
@@ -154,9 +156,9 @@ void sensor_processor_calculate(void) {
     // 输出，映射回去
     int32_t output_pwm_value = sensor_data.slider * sensor_data.gain;
     if (output_pwm_value > 0) {
-        sensor_data.output_pwm = map(output_pwm_value, 0, 500, eepromBuffer.gyro.mid, eepromBuffer.gyro.mid + eepromBuffer.gyro.servo_range_b);
+        sensor_data.output_pwm = map(output_pwm_value, 0, 500, eepromBuffer.gyro.servo_mid, eepromBuffer.gyro.servo_mid + eepromBuffer.gyro.servo_range_b);
     } else {
-        sensor_data.output_pwm = map(output_pwm_value, -500, 0, eepromBuffer.gyro.mid - eepromBuffer.gyro.servo_range_a, eepromBuffer.gyro.mid);
+        sensor_data.output_pwm = map(output_pwm_value, -500, 0, eepromBuffer.gyro.servo_mid - eepromBuffer.gyro.servo_range_a, eepromBuffer.gyro.servo_mid);
     }
 
     last_calculate_time = this_calculate_time;

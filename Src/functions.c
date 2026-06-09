@@ -105,7 +105,7 @@ uint8_t get_crc8(uint8_t* Buf, uint8_t BufLen)
     return (crc);
 }
 
-uint8_t sgn(uint32_t x)
+int sgn(int x)
 {
     return (x > 0) - (x < 0);
 }

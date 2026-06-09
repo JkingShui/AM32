@@ -1695,7 +1695,7 @@ void epaSetting()
         if (button_read() == 1)
         {
             // 获取设置的值
-            eepromBuffer.gyro.mid = val;
+            eepromBuffer.gyro.servo_mid = val;
 
             // 闪灯提示
             led_blink_fast_3x();
@@ -1725,7 +1725,7 @@ void epaSetting()
         if (button_read() == 1)
         {
             // 获取设置的值
-            left = val - eepromBuffer.gyro.mid;
+            left = val - eepromBuffer.gyro.servo_mid;
             if (left > 0)
             {
                 eepromBuffer.gyro.servo_range_b = left;
@@ -1762,10 +1762,10 @@ void epaSetting()
         // 输出到舵机
         tmr_channel_value_set(TMR15, TMR_SELECT_CHANNEL_1, val);
         // 按钮确认设置,右边应该跟左边是相反的数值，加一层判断用来防止用户一直往左边打设置两次左边
-        if (button_read() == 1 && sgn(val - eepromBuffer.gyro.mid) != sgn(left))
+        if (button_read() == 1 && sgn(val - eepromBuffer.gyro.servo_mid) != sgn(left))
         {
             // 获取设置的值
-            int param = val - eepromBuffer.gyro.mid;
+            int param = val - eepromBuffer.gyro.servo_mid;
             if (param > 0)
             {
                 eepromBuffer.gyro.servo_range_b = param;
@@ -1811,7 +1811,7 @@ int main(void)
     }
 
     // 初始化epa,用正反向来判断是否初始化过
-    if (eepromBuffer.gyro.reserved > 1) {
+    if (eepromBuffer.gyro.reverse > 1) {
         eepromBuffer.gyro.reverse = 0;
         eepromBuffer.gyro.servo_mid = 1500;
         eepromBuffer.gyro.servo_range_a = 1000;

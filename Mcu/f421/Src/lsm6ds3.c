@@ -1,6 +1,7 @@
 #include "lsm6ds3.h"
 #include "i2c_application.h"
 #include "main.h"
+#include "eeprom.h"
 
 #define GYRO_SCALE_2000DPS 0.07f
 
@@ -9,6 +10,7 @@ i2c_type *i2c_x;
 i2c_handle_type hi2cx;
 uint8_t buf_arry[2];
 volatile uint16_t gyro_buf;
+extern EEprom_t eepromBuffer;
 
 void i2c_lowlevel_init(i2c_handle_type* hi2c)
 {
