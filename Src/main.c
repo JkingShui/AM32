@@ -1668,14 +1668,131 @@ static void checkDeviceInfo(void)
 
 }
 
+void epaSetting() 
+{
+    // 判断按键按下
+    if (button_read() == 0) {
+        return;
+    }
+    // 闪灯提示
+    led_blink_fast_3x();
+    // 等待松开，防止一直按住误操作
+    while (button_read() == 1)
+    {
+        delayMillis(20);
+    }
+
+    // 设置中位
+    while (1)
+    {
+        // 慢闪红灯提示
+        led_blink_1hz();
+        // 获取手轮值
+        uint32_t val = pwm2_capture_high_time;
+        // 输出到舵机
+        tmr_channel_value_set(TMR15, TMR_SELECT_CHANNEL_1, val);
+        // 按钮确认设置
+        if (button_read() == 1)
+        {
+            // 获取设置的值
+            eepromBuffer.gyro.mid = val;
+
+            // 闪灯提示
+            led_blink_fast_3x();
+            break;
+        }
+        delayMillis(5);
+    }
+
+    // 等待松开，防止一直按住误操作
+    while (button_read() == 1)
+    {
+        delayMillis(20);
+    }
+
+    // 左边的值，用来处理正反向
+    int left;
+    // 设置左边
+    while (1)
+    {
+        // 慢闪红灯提示
+        led_blink_1hz();
+       // 获取手轮值
+        uint32_t val = pwm2_capture_high_time;
+        // 输出到舵机
+        tmr_channel_value_set(TMR15, TMR_SELECT_CHANNEL_1, val);
+        // 按钮确认设置
+        if (button_read() == 1)
+        {
+            // 获取设置的值
+            left = val - eepromBuffer.gyro.mid;
+            if (left > 0)
+            {
+                eepromBuffer.gyro.servo_range_b = left;
+                // 陀螺仪正反向
+                eepromBuffer.gyro.reverse = 0;
+            }
+            else
+            {
+                eepromBuffer.gyro.servo_range_a = -left;
+                // 陀螺仪正反向
+                eepromBuffer.gyro.reverse = 1;
+            }
+
+            // 闪灯提示
+            led_blink_fast_3x();
+            break;
+        }
+        delayMillis(5);
+    }
+
+    // 等待松开，防止一直按住误操作
+    while (button_read() == 1)
+    {
+        delayMillis(20);
+    }
+
+    // 设置右边
+    while (1)
+    {
+        // 慢闪红灯提示
+        led_blink_1hz();
+       // 获取手轮值
+        uint32_t val = pwm2_capture_high_time;
+        // 输出到舵机
+        tmr_channel_value_set(TMR15, TMR_SELECT_CHANNEL_1, val);
+        // 按钮确认设置,右边应该跟左边是相反的数值，加一层判断用来防止用户一直往左边打设置两次左边
+        if (button_read() == 1 && sgn(val - eepromBuffer.gyro.mid) != sgn(left))
+        {
+            // 获取设置的值
+            int param = val - eepromBuffer.gyro.mid;
+            if (param > 0)
+            {
+                eepromBuffer.gyro.servo_range_b = param;
+            }
+            else
+            {
+                eepromBuffer.gyro.servo_range_a = -param;
+            }
+
+            // 闪灯提示
+            led_blink_fast_3x();
+            break;
+        }
+        delayMillis(5);
+    }
+    // 保存设置
+    saveEEpromSettings();
+}
+
 /**
  * TODO 
- * 1.pid
- * 2.epa epprom保存
- * 3.led灯提示
- * 4.按钮功能
- * 5.flash保护功能 ENABLE_FLASH_PROTECTION
- * 6.nvic优先级设置
+ * 1.pid done test
+ * 2.epa epprom保存 done test
+ * 3.led灯提示 done test
+ * 4.按钮功能 done test
+ * 5.flash保护功能 ENABLE_FLASH_PROTECTION done test
+ * 6.nvic优先级设置 done test
  */
 int main(void)
 {
@@ -1684,11 +1801,21 @@ int main(void)
     initCorePeripherals();
     enableCorePeripherals();
     loadEEpromSettings();
+    epaSetting();
 
     if (VERSION_MAJOR != eepromBuffer.version.major || VERSION_MINOR != eepromBuffer.version.minor || EEPROM_VERSION > eepromBuffer.eeprom_version) {
         eepromBuffer.version.major = VERSION_MAJOR;
         eepromBuffer.version.minor = VERSION_MINOR;
         eepromBuffer.eeprom_version = EEPROM_VERSION;
+        saveEEpromSettings();
+    }
+
+    // 初始化epa,用正反向来判断是否初始化过
+    if (eepromBuffer.gyro.reserved > 1) {
+        eepromBuffer.gyro.reverse = 0;
+        eepromBuffer.gyro.servo_mid = 1500;
+        eepromBuffer.gyro.servo_range_a = 1000;
+        eepromBuffer.gyro.servo_range_b = 2000;
         saveEEpromSettings();
     }
     

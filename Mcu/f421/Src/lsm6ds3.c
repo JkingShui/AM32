@@ -1,5 +1,6 @@
 #include "lsm6ds3.h"
 #include "i2c_application.h"
+#include "main.h"
 
 #define GYRO_SCALE_2000DPS 0.07f
 
@@ -117,5 +118,7 @@ uint8_t lsm6ds3_read_gyro_z(int16_t *z_data)
 
 float lsm6ds3_convert_to_dps(int16_t raw)
 {
-    return (float)raw * GYRO_SCALE_2000DPS;
+    // 500为满量程
+    float dps = (float)raw * GYRO_SCALE_2000DPS * (500.0f / 3.1415926f);
+    return eepromBuffer.gyro.reverse ? -dps : dps;
 }

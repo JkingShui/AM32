@@ -17,11 +17,7 @@
  * @param add 要保存的FLASH地址长度
  */
 void save_flash_nolib(uint8_t* data, int length, uint32_t add)
-{ /// todo
-
-    // fmc_wscnt_set(2);
-
-    // fmc_prefetch_enable();
+{
 
     uint32_t data_to_FLASH[length / 4];
     memset(data_to_FLASH, 0, length / 4);

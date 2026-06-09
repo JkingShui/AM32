@@ -21,6 +21,29 @@
       "cStandard": "c11",
       "cppStandard": "c++17",
       "intelliSenseMode": "gcc-arm"
+    },
+    {
+      "name": "Windows",
+      "includePath": [
+        "${workspaceFolder}/**",
+        "${workspaceFolder}/Inc",
+        "${workspaceFolder}/Src",
+        "${workspaceFolder}/Mcu/f421/Inc",
+        "${workspaceFolder}/Mcu/f421/Src",
+        "${workspaceFolder}/Mcu/f421/Drivers/CMSIS/cm4/core_support",
+        "${workspaceFolder}/Mcu/f421/Drivers/CMSIS/cm4/device_support",
+        "${workspaceFolder}/Mcu/f421/Drivers/drivers/inc"
+      ],
+      "defines": [
+        "__GNUC__",
+        "__ARMCC_VERSION__=6010050",
+        "AT32DEV_F421",
+        "MCU_AT421"
+      ],
+      "compilerPath": "",
+      "cStandard": "c11",
+      "cppStandard": "c++17",
+      "intelliSenseMode": "windows-gcc-arm"
     }
   ],
   "version": 4

@@ -105,6 +105,13 @@ uint8_t get_crc8(uint8_t* Buf, uint8_t BufLen)
     return (crc);
 }
 
+uint8_t sgn(uint32_t x)
+{
+    return (x > 0) - (x < 0);
+}
+
+
+
 #ifdef MCU_AT421
 void gpio_mode_QUICK(gpio_type* gpio_periph, uint32_t mode,
     uint32_t pull_up_down, uint32_t pin)

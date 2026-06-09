@@ -69,17 +69,15 @@ typedef union EEprom_u {
         uint8_t input_type; // 46 输入类型（0=PWM，1=DShot）
         uint8_t auto_advance; // 47 自动提前角度（0=禁用，1=启用）
         uint8_t tune[128]; // 48-175 调优参数
+        // can配置改为陀螺仪参数
         struct {
-            uint8_t can_node; // 176 CAN节点ID
-            uint8_t esc_index; // 177 ESC索引
-            uint8_t require_arming; // 178 需要arming（0=禁用，1=启用）
-            uint8_t telem_rate; // 179 遥测速率（0-255ms）
-            uint8_t require_zero_throttle; // 180 需要零油门（0=禁用，1=启用）
-            uint8_t filter_hz; // 181 滤波器频率（0-1000Hz）
-            uint8_t debug_rate; // 182 调试速率（0-255ms）
-            uint8_t term_enable; // 183 终端启用（0=禁用，1=启用）
-            uint8_t reserved[8]; // 184-191 保留字段
-        } can; // CAN总线配置
+            uint8_t reverse;// 正反向
+            uint16_t servo_mid;// 中位
+            uint16_t servo_range_a;// 范围A
+            uint16_t servo_range_b;// 范围B
+            
+            uint8_t reserved[9]; // 保留字段
+        } gyro;
     };
     uint8_t buffer[192]; // 原始数据缓冲区
 } EEprom_t;

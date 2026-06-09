@@ -67,8 +67,11 @@ void setIndividualRGBLed(uint8_t red, uint8_t green, uint8_t blue);
 
 // 按钮和LED函数
 void button_led_init(void);
-uint8_t button_read(void);
-void led_set(uint8_t state);
+uint8_t button_read(void);       // 读取按键状态（带delay消抖）
+void led_set(uint8_t state);     // 设置LED状态
+void led_blink_1hz(void);        // LED每隔1秒闪一下（非阻塞式）
+void led_blink_fast(uint8_t times, uint16_t interval_ms);  // LED快闪N次
+void led_blink_fast_3x(void);    // LED快闪3次（默认）
 
 // Flash 保护函数
 flash_status_type flash_fap_high_level_protection_enable(void);

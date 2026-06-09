@@ -257,13 +257,13 @@ void TMR3_GLOBAL_IRQHandler(void)
     }
 }
 
-
-void TMR17_GLOBAL_IRQHandler(void) {
-    if (TMR17->ists & TMR_OVF_FLAG) {
-        TMR17->ists = ~TMR_OVF_FLAG;
-        sensor_processor_update_gyro();
-    }
-}
+// 陀螺仪定时器中断处理函数，没有使用了，因为17被delay占用
+// void TMR17_GLOBAL_IRQHandler(void) {
+//     if (TMR17->ists & TMR_OVF_FLAG) {
+//         TMR17->ists = ~TMR_OVF_FLAG;
+//         sensor_processor_update_gyro();
+//     }
+// }
 
 // void DMA_Channel0_IRQHandler(void)         // ADC
 //{
