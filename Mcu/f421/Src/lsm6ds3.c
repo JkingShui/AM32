@@ -3,13 +3,11 @@
 #include "main.h"
 #include "eeprom.h"
 
-#define GYRO_SCALE_2000DPS 0.07f
-
 static int16_t gyro_z_offset = 0;
 i2c_type *i2c_x;
 i2c_handle_type hi2cx;
 uint8_t buf_arry[2];
-volatile uint16_t gyro_buf;
+volatile int16_t gyro_buf;
 extern EEprom_t eepromBuffer;
 
 void i2c_lowlevel_init(i2c_handle_type* hi2c)
@@ -75,7 +73,7 @@ uint8_t lsm6ds3_init()
         while(1);
     }
 
-    uint8_t ctrl1_xl = 0x60;
+    uint8_t ctrl1_xl = 0x4A;
     uint8_t ctrl2_g = 0x4C;
     uint8_t ctrl3_c = 0x04;
     i2c_memory_write(&hi2cx, I2C_MEM_ADDR_WIDIH_8, LSM6DS3_I2C_ADDR, LSM6DS3_CTRL1_XL, &ctrl1_xl, 1, 10000);
@@ -121,6 +119,6 @@ uint8_t lsm6ds3_read_gyro_z(int16_t *z_data)
 float lsm6ds3_convert_to_dps(int16_t raw)
 {
     // 500为满量程
-    float dps = (float)raw * GYRO_SCALE_2000DPS * (500.0f / 3.1415926f);
+    float dps = (float)raw * GYRO_SCALE;
     return eepromBuffer.gyro.reverse ? -dps : dps;
 }

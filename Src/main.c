@@ -1685,6 +1685,9 @@ void epaSetting()
     // 设置中位
     while (1)
     {
+        // 短延时让中断有机会响应
+        __NOP();__NOP();__NOP();__NOP();
+        __NOP();__NOP();__NOP();__NOP();
         // 慢闪红灯提示
         led_blink_1hz();
         // 获取手轮值
@@ -1701,7 +1704,6 @@ void epaSetting()
             led_blink_fast_3x();
             break;
         }
-        delayMillis(5);
     }
 
     // 等待松开，防止一直按住误操作
@@ -1743,7 +1745,6 @@ void epaSetting()
             led_blink_fast_3x();
             break;
         }
-        delayMillis(5);
     }
 
     // 等待松开，防止一直按住误操作

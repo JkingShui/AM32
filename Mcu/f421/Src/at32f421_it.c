@@ -239,8 +239,16 @@ void TMR3_GLOBAL_IRQHandler(void)
                 high_time = (65536 - capture_value_prev) + capture_value;
             }
 
-            if (high_time > 500 && high_time < 3000) {
-                pwm2_capture_high_time = high_time;
+            // 根据 TIM3 分频寄存器动态计算
+            // 分频系数 = div + 1
+            uint32_t prescaler = IC_TIMER_REGISTER->div + 1;
+            // 500us 和 3000us 对应的计数值
+            uint32_t min_count = (500 * 120) / prescaler;
+            uint32_t max_count = (3000 * 120) / prescaler;
+            
+            if (high_time > min_count && high_time < max_count) {
+                // 转换为微秒: high_time_us = high_time * prescaler / 120
+                pwm2_capture_high_time = (high_time * prescaler) / 120;
                 pwm2_data_ready = 1;
             }
 

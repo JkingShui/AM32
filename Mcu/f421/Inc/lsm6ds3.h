@@ -6,6 +6,8 @@ extern "C" {
 #endif
 
 #include "at32f421_i2c.h"
+// TODO 缩放不对
+#define GYRO_SCALE 0.06104f
 
 #define LSM6DS3_I2C_ADDR    0x6B << 1
 

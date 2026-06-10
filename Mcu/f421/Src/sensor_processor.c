@@ -66,8 +66,8 @@ int32_t map_pwm_to_slider(uint32_t pwm_high_time,
     // 双区间线性映射
     if (pwm_high_time < servo_mid) {
         raw_output = map(pwm_high_time, servo_mid - servo_range_a, servo_mid, -500, 0);
-    } else if (pwm_high_time > servo_range_b) {
-        raw_output = map(pwm_high_time, servo_mid + servo_range_b, servo_range_b, 0, 500);
+    } else if (pwm_high_time > servo_mid) {
+        raw_output = map(pwm_high_time, servo_mid, servo_mid + servo_range_b, 0, 500);
     } else {
         raw_output = 0;
     }
@@ -99,6 +99,7 @@ void sensor_processor_init(void) {
     sensor_data.gain = 0.0f;
 }
 
+volatile uint16_t loop_time = 0;
 // TODO 降低更新频率，降低的值还需要确定
 int32_t last_update_time = 0;
 void sensor_processor_update_gyro(void) {
@@ -108,6 +109,8 @@ void sensor_processor_update_gyro(void) {
         if(ret == 1)
         {
             sensor_data.gyro_z_dps = lsm6ds3_convert_to_dps(sensor_data.gyro_z);
+            uart_print_number(loop_time);
+            uart_print_string("\n");
         } else if(ret == 0)
         {
             // 0代表等待中，不处理
@@ -154,7 +157,9 @@ void sensor_processor_calculate(void) {
     sensor_data.slider = 0.8f * error + sensor_data.integral;
 
     // 输出，映射回去
-    int32_t output_pwm_value = sensor_data.slider * sensor_data.gain;
+    // int32_t output_pwm_value = sensor_data.slider * sensor_data.gain;
+    // TODO 测试gain 设置1
+    int32_t output_pwm_value = sensor_data.slider;
     if (output_pwm_value > 0) {
         sensor_data.output_pwm = map(output_pwm_value, 0, 500, eepromBuffer.gyro.servo_mid, eepromBuffer.gyro.servo_mid + eepromBuffer.gyro.servo_range_b);
     } else {
@@ -162,6 +167,7 @@ void sensor_processor_calculate(void) {
     }
 
     last_calculate_time = this_calculate_time;
+    loop_time = gap_time;
 }
 
 void sensor_processor_update_output(void) {

@@ -532,9 +532,7 @@ uint8_t button_read(void)
     uint8_t first = (gpio_input_data_bit_read(GPIOB, GPIO_PINS_3) == RESET) ? 1 : 0;
     
     // 延时约10ms消抖
-    for (uint8_t i = 0; i < 10; i++) {
-        delayMillis(10);
-    }
+    delayMillis(10);
     
     uint8_t second = (gpio_input_data_bit_read(GPIOB, GPIO_PINS_3) == RESET) ? 1 : 0;
     
@@ -557,36 +555,32 @@ void led_set(uint8_t state)
 }
 
 /**
- * @brief 简单延时函数（毫秒级）
- * @param ms 延时毫秒数
- */
-static void led_delay_ms(uint32_t ms)
-{
-    // 基于定时器的延时（UTILITY_TIMER频率为1MHz）
-    uint32_t start = UTILITY_TIMER->cval;
-    while ((UTILITY_TIMER->cval - start) < (ms * 1000));
-}
-
-/**
- * @brief LED每隔1秒闪一下（非阻塞式）
+ * @brief LED 每隔 1 秒闪一下（非阻塞式）
  * 
- * 调用后检查时间，每隔500ms切换一次LED状态
+ * 调用后检查时间，每隔 500ms 切换一次 LED 状态
  * 需要在主循环中持续调用，不会阻塞其他代码执行
- * 闪烁模式：亮500ms，灭500ms，周期1秒
+ * 闪烁模式：亮 500ms，灭 500ms，周期 1 秒
  */
 void led_blink_1hz(void)
 {
     static uint32_t last_time = 0;  // 上次切换时间
-    static uint8_t led_state = 0;   // 当前LED状态
+    static uint8_t led_state = 0;   // 当前 LED 状态
+    static uint16_t counter = 0;    // 计数器，计满 100 次为 500ms
     
     uint32_t current_time = UTILITY_TIMER->cval;  // 获取当前时间（微秒）
     
-    // 检查是否超过500ms
-    if (current_time - last_time >= 500000 || 
-        (current_time < last_time && 0xFFFF - last_time + current_time >= 500000)) {  // 500ms = 500000微秒
-        led_set(led_state);
-        led_state = !led_state;
+    // 检查是否超过 5ms（5000 微秒）
+    if (current_time - last_time >= 5000 || 
+        (current_time < last_time && 0xFFFF - last_time + current_time >= 5000)) {
+        counter++;
         last_time = current_time;
+        
+        // 计满 100 次（500ms）切换 LED 状态
+        if (counter >= 100) {
+            led_set(led_state);
+            led_state = !led_state;
+            counter = 0;
+        }
     }
 }
 
@@ -599,10 +593,10 @@ void led_blink_fast(uint8_t times, uint16_t interval_ms)
 {
     for (uint8_t i = 0; i < times; i++) {
         led_set(1);   // LED亮
-        led_delay_ms(interval_ms);
+        delayMillis(interval_ms);
         
         led_set(0);   // LED灭
-        led_delay_ms(interval_ms);
+        delayMillis(interval_ms);
     }
 }
 
@@ -613,7 +607,7 @@ void led_blink_fast(uint8_t times, uint16_t interval_ms)
  */
 void led_blink_fast_3x(void)
 {
-    led_blink_fast(3, 100);
+    led_blink_fast(3, 200);
 }
 
 /**
