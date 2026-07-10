@@ -505,7 +505,8 @@ void enableCorePeripherals()
 /**
  * @brief 按钮和LED初始化
  * @note PB3 - 按钮输入（上拉）
- *       PA15 - LED输出
+ *       PB2 - LED输出
+ *       PA15 - mos开关电路输出
  */
 void button_led_init(void)
 {
@@ -515,7 +516,10 @@ void button_led_init(void)
     // PB3 按钮输入，上拉
     gpio_mode_QUICK(GPIOB, GPIO_MODE_INPUT, GPIO_PULL_UP, GPIO_PINS_3);
     
-    // PA15 LED输出
+    // PB2 LED输出
+    gpio_mode_QUICK(GPIOB, GPIO_MODE_OUTPUT, GPIO_PULL_NONE, GPIO_PINS_2);
+
+    // PA15 mos开关电路输出
     gpio_mode_QUICK(GPIOA, GPIO_MODE_OUTPUT, GPIO_PULL_NONE, GPIO_PINS_15);
     
     // 默认LED关闭
@@ -548,9 +552,18 @@ uint8_t button_read(void)
 void led_set(uint8_t state)
 {
     if (state) {
-        GPIOA->clr = GPIO_PINS_15;  // 低电平点亮
+        GPIOB->clr = GPIO_PINS_2;  // 低电平点亮
     } else {
-        GPIOA->scr = GPIO_PINS_15;  // 高电平熄灭
+        GPIOB->scr = GPIO_PINS_2;  // 高电平熄灭
+    }
+}
+
+void mos_button_set(uint8_t state)
+{
+    if (state) {
+        GPIOA->scr = GPIO_PINS_15;
+    } else {
+        GPIOA->clr = GPIO_PINS_15;
     }
 }
 

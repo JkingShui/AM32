@@ -377,6 +377,22 @@ uint16_t velocity_count_threshold = 75;
 // 低速限制占空比
 char low_rpm_throttle_limit = 0;
 
+// ==================== 发动机转速限制功能 ====================
+#define RPM_LIMIT_DROP_PERCENT    50      // 掉回转速占最高转速的百分比（可配置）
+#define RPM_LIMIT_LOW_DUTY_PERCENT 80     // 低转速阶段的占空比百分比（可配置）
+#define RPM_LIMIT_LOW_DURATION_MS  5    // 低转速持续时间（ms，可配置）
+#define THROTTLE_95_PERCENT       1945    // 油门95%对应的数值 (2047 * 0.95)
+#define RPM_LIMIT_DELAY_MS        500     // 开启转速限制前的等待时间（ms）
+#define RPM_LIMIT_HYSTERESIS      50      // 转速判断滞环（erpm/100）
+
+// 转速限制状态变量
+char rpm_limit_active = 0;        // 是否开启转速限制
+char rpm_limit_running = 0;       // 是否正在执行转速跳动
+uint16_t rpm_limit_high = 0;      // 记录的最高转速（erpm/100）
+uint16_t throttle_high_count = 0; // 油门95%以上持续计数器
+char rpm_switch_state = 0;        // 转速切换状态（0=高转速阶段，1=低转速阶段）
+uint16_t rpm_low_duration_count = 0; // 低转速持续时间计数器
+
 uint16_t low_voltage_count = 0;
 uint16_t telem_ms_count;
 
@@ -1244,6 +1260,8 @@ void setInput()
             if (stall_protection_adjust > 0 && input > 47) {
                 duty_cycle_setpoint = duty_cycle_setpoint + (uint16_t)(stall_protection_adjust/10000);
             }
+            
+            
         }
     }
 }
@@ -1263,6 +1281,43 @@ void setInput()
  */
 void tenKhzRoutine()
 { // 20khz as of 2.00 to be renamed
+
+    // ==================== 发动机转速限制 - 占空比调节 ====================
+    if (rpm_limit_active && rpm_limit_running && running) {
+        // 调试输出：显示转速限制状态
+        // uart_print_string("RPM Limit! ");
+        // uart_print_string("State: ");
+        // uart_print_number(rpm_switch_state);
+        // uart_print_string(" RPM: ");
+        // uart_print_number(e_rpm);
+        // uart_print_string(" High: ");
+        // uart_print_number(rpm_limit_high);
+        // uart_print_string(" Low: ");
+        // uart_print_string("\n");
+        
+        // 根据当前状态调整占空比
+        if (rpm_switch_state == 0) {
+            // 高转速阶段：当前转速达到最高转速，切换到低转速阶段
+            if (e_rpm >= rpm_limit_high - RPM_LIMIT_HYSTERESIS) {
+                rpm_switch_state = 1; // 切换到低转速阶段
+                rpm_low_duration_count = 0; // 重置低转速持续时间
+            }
+            // 使用正常占空比（保持高转速）
+        } else {
+            // 低转速阶段：降低占空比到设定百分比
+            uint16_t duty_ratio = RPM_LIMIT_LOW_DUTY_PERCENT;
+            duty_cycle_setpoint = (duty_cycle_setpoint * duty_ratio) / 100.0f;
+            // if (duty_cycle_setpoint < minimum_duty_cycle) {
+            //     duty_cycle_setpoint = minimum_duty_cycle;
+            // }
+            
+            // 持续低转速一段时间后，切换回高转速阶段
+            if (rpm_low_duration_count >= RPM_LIMIT_LOW_DURATION_MS) {
+                rpm_switch_state = 0; // 切换回高转速阶段
+            }
+        }
+    }
+
     // 更新占空比为设定值
     duty_cycle = duty_cycle_setpoint;
     
@@ -1367,6 +1422,44 @@ void tenKhzRoutine()
             // 设置ADC处理标志，在低优先级下执行新的ADC读取
             PROCESS_ADC_FLAG = 1; // set flag to do new adc read at lower priority
             one_khz_loop_counter = 0;
+            
+            // ==================== 发动机转速限制功能 ====================
+            // 计算当前电转速 e_rpm (erpm/100)
+            
+            // 开启条件：油门到达95%以上持续0.5s
+            if (adjusted_input >= THROTTLE_95_PERCENT && running) {
+                throttle_high_count++;
+                // 持续记录最高转速（用于初始化）,已经在最高转速就不再更新
+                if (e_rpm > rpm_limit_high && !rpm_limit_active) {
+                    rpm_limit_high = e_rpm;
+                }
+                // 持续0.5秒后开启转速限制
+                if (throttle_high_count >= RPM_LIMIT_DELAY_MS && !rpm_limit_active) {
+                    rpm_limit_active = 1;
+                    rpm_switch_state = 0; // 初始状态：高转速阶段
+                    rpm_limit_running = 0; // 还未开始跳动
+                }
+                
+                // 如果已经开启转速限制，检查是否达到最高转速
+                if (rpm_limit_active && !rpm_limit_running) {
+                    // 转速达到最高转速时开始跳动
+                    if (e_rpm >= rpm_limit_high - RPM_LIMIT_HYSTERESIS) {
+                        rpm_limit_running = 1;
+                    }
+                }
+                
+                // 低转速持续时间计数器递增（在1kHz循环中）
+                if (rpm_limit_active && rpm_limit_running && rpm_switch_state == 1) {
+                    rpm_low_duration_count++;
+                }
+            } else {
+                // 关闭条件：油门在95%以下
+                throttle_high_count = 0;
+                if (rpm_limit_active) {
+                    rpm_limit_active = 0;
+                    rpm_limit_high = 0;
+                }
+            }
             
             // 失速保护调整（用于攀爬车和RC车，不建议多旋翼使用）
             if (eepromBuffer.stall_protection && running) { // this boosts throttle as the rpm gets lower, for crawlers
@@ -1788,18 +1881,19 @@ void epaSetting()
 
 /**
  * TODO 
- * 1.pid done test
- * 2.epa epprom保存 done test
- * 3.led灯提示 done test
- * 4.按钮功能 done test
+ * 1.转速保护功能
+ * 2.看门狗启用
  * 5.flash保护功能 ENABLE_FLASH_PROTECTION done test
  * 6.nvic优先级设置 done test
+ * 7.mos开关电路测试
  */
 int main(void)
 {
     initAfterJump();
     checkDeviceInfo();
     initCorePeripherals();
+    mos_button_set(1);// keep mos switch on
+    led_set(1);
     enableCorePeripherals();
     loadEEpromSettings();
     epaSetting();

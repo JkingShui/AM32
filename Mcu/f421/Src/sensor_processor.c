@@ -109,8 +109,6 @@ void sensor_processor_update_gyro(void) {
         if(ret == 1)
         {
             sensor_data.gyro_z_dps = lsm6ds3_convert_to_dps(sensor_data.gyro_z);
-            uart_print_number(loop_time);
-            uart_print_string("\n");
         } else if(ret == 0)
         {
             // 0代表等待中，不处理
