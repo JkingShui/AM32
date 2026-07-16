@@ -117,7 +117,6 @@ void computeServoInput()
 
 void transfercomplete()
 {
-#ifndef MCU_F031   // f031 does not use software EXTI event to process dshot
     if (armed && dshot_telemetry) {
         if (out_put) {
             receiveDshotDma();
@@ -129,10 +128,13 @@ void transfercomplete()
             return;
         }
     }
-#endif
+
     if (inputSet == 0) {
         detectInput();
-        receiveDshotDma();
+        // receiveDshotDma();
+        // 重新启动DMA（不调用receiveDshotDma避免cval=0影响PB5）
+        INPUT_DMA_CHANNEL->dtcnt = buffersize;
+        INPUT_DMA_CHANNEL->ctrl = 0x98b;
         return;
     }
     if (inputSet == 1) {
@@ -160,7 +162,9 @@ void transfercomplete()
                     buffersize = 2;
                     computeServoInput();
                 }
-                receiveDshotDma();
+                // 重新启动DMA（不调用receiveDshotDma避免cval=0影响PB5）
+                INPUT_DMA_CHANNEL->dtcnt = buffersize;
+                INPUT_DMA_CHANNEL->ctrl = 0x98b;
             }
         }
         if (!armed) {

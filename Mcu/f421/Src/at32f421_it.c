@@ -116,7 +116,6 @@ void DMA1_Channel1_IRQHandler(void)
 
 void DMA1_Channel5_4_IRQHandler(void)
 {
-#ifdef USE_TIMER_3_CHANNEL_1
     if (dshot) {
         DMA1->clr = DMA1_GL4_FLAG;
         INPUT_DMA_CHANNEL->ctrl_bit.chen = FALSE;
@@ -124,23 +123,27 @@ void DMA1_Channel5_4_IRQHandler(void)
         EXINT->swtrg = EXINT_LINE_15;
         return;
     }
+    // 通道4半传输完成
     if (dma_flag_get(DMA1_HDT4_FLAG) == SET) {
         if (servoPwm) {
             IC_TIMER_REGISTER->cctrl_bit.c1p = TMR_INPUT_FALLING_EDGE;
-            DMA1->clr = DMA1_HDT4_FLAG;
+            DMA1->clr = DMA1_HDT4_FLAG;// 清除通道 4 的半数据传输标志
         }
     }
+    // 通道4完整传输完成
     if (dma_flag_get(DMA1_FDT4_FLAG) == SET) {
-        DMA1->clr = DMA1_GL4_FLAG;
-        INPUT_DMA_CHANNEL->ctrl_bit.chen = FALSE;
+        DMA1->clr = DMA1_GL4_FLAG;// 清除通道 4 的完整数据传输标志
+        INPUT_DMA_CHANNEL->ctrl_bit.chen = FALSE;// 禁用输入通道 4 的DMA传输
+        // IC_TIMER_REGISTER->cctrl_bit.c1p = TMR_INPUT_RISING_EDGE;
         transfercomplete();
-        EXINT->swtrg = EXINT_LINE_15;
+        EXINT->swtrg = EXINT_LINE_15;// 触发外部中断 15
     }
+
     if (dma_flag_get(DMA1_DTERR4_FLAG) == SET) {
         DMA1->clr = DMA1_GL4_FLAG;
     }
-#endif
 
+    // 处理I2C接收中断，陀螺仪用
     i2c_dma_rx_irq_handler(&hi2cx);
 }
 
@@ -212,56 +215,38 @@ extern volatile uint8_t pwm2_data_ready;
 void TMR3_GLOBAL_IRQHandler(void)
 {
     static uint32_t capture_value_prev = 0;
-    static uint8_t capture_state = 0;
-    tmr_input_config_type tmr_input_struct;
+    static uint8_t  capture_state = 0;     // 0=等上升沿(起点), 1=等下降沿(算高电平)
 
-    if ((TMR3->ists & TMR_OVF_FLAG) != (uint16_t)RESET) {
+    /* ---- 溢出清标志（16位无符号减法算差值已自动处理溢出，这里只是防止反复进中断） ---- */
+    if (TMR3->ists & TMR_OVF_FLAG) {
         TMR3->ists = (uint16_t)~TMR_OVF_FLAG;
     }
 
-    if ((TMR3->ists & TMR_C2_FLAG) != (uint16_t)RESET) {
-        uint32_t capture_value = tmr_channel_value_get(TMR3, TMR_SELECT_CHANNEL_2);
+    /* ---- CH2(PB5转向) 捕获：先清标志再处理！（关键！把"清标志"放最前面） ---- */
+    if (TMR3->ists & TMR_C2_FLAG) {
+        TMR3->ists = (uint16_t)~TMR_C2_FLAG;   // ★ 第一时间清标志，最大限度避免丢下一边沿
+        const uint32_t capture_value = TMR3->c2dt;  // ★ 直接读CH2捕获寄存器，不调用库函数
+        const uint32_t prescaler     = TMR3->div + 1;
 
         if (capture_state == 0) {
+            /* ============= 上升沿：记录起点 + 切"下降沿触发"(只写c2p一个位,极快) ============= */
             capture_value_prev = capture_value;
             capture_state = 1;
-
-            tmr_input_struct.input_channel_select = TMR_SELECT_CHANNEL_2;
-            tmr_input_struct.input_mapped_select = TMR_CC_CHANNEL_MAPPED_DIRECT;
-            tmr_input_struct.input_polarity_select = TMR_INPUT_FALLING_EDGE;
-            tmr_input_struct.input_filter_value = 0x0A;
-            tmr_input_channel_init(TMR3, &tmr_input_struct, TMR_CHANNEL_INPUT_DIV_1);
+            TMR3->cctrl_bit.c2p = TMR_INPUT_FALLING_EDGE;  // AT32位域写法，等价于SDK宏切极性
         } else {
-            uint32_t high_time;
-            if (capture_value >= capture_value_prev) {
-                high_time = capture_value - capture_value_prev;
-            } else {
-                high_time = (65536 - capture_value_prev) + capture_value;
-            }
+            /* ============= 下降沿：算高电平 + 切回"上升沿触发" ============= */
+            const uint32_t high_time = (uint16_t)(capture_value - capture_value_prev);   // ★ 无符号16位减法,自动处理0xFFFF溢出(不用if/else分支)
+            const uint32_t min_count = ( 500u * 120u) / prescaler;   // 合法范围  500us
+            const uint32_t max_count = (3000u * 120u) / prescaler;   // 合法范围 3000us
 
-            // 根据 TIM3 分频寄存器动态计算
-            // 分频系数 = div + 1
-            uint32_t prescaler = IC_TIMER_REGISTER->div + 1;
-            // 500us 和 3000us 对应的计数值
-            uint32_t min_count = (500 * 120) / prescaler;
-            uint32_t max_count = (3000 * 120) / prescaler;
-            
             if (high_time > min_count && high_time < max_count) {
-                // 转换为微秒: high_time_us = high_time * prescaler / 120
-                pwm2_capture_high_time = (high_time * prescaler) / 120;
+                pwm2_capture_high_time = (high_time * prescaler) / 120u;
                 pwm2_data_ready = 1;
             }
 
             capture_state = 0;
-
-            tmr_input_struct.input_channel_select = TMR_SELECT_CHANNEL_2;
-            tmr_input_struct.input_mapped_select = TMR_CC_CHANNEL_MAPPED_DIRECT;
-            tmr_input_struct.input_polarity_select = TMR_INPUT_RISING_EDGE;
-            tmr_input_struct.input_filter_value = 0x0A;
-            tmr_input_channel_init(TMR3, &tmr_input_struct, TMR_CHANNEL_INPUT_DIV_1);
+            TMR3->cctrl_bit.c2p = TMR_INPUT_RISING_EDGE;   // 切回上升沿，等下一周期起点
         }
-
-        TMR3->ists = (uint16_t)~TMR_C2_FLAG;
     }
 }
 

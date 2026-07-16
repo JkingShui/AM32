@@ -38,8 +38,9 @@
  * @{
  */
 #define VECT_TAB_OFFSET                                                       \
-    0x1000 /*!< vector table base offset field. this value must be a multiple \
+    0x0000 /*!< vector table base offset field. this value must be a multiple \
               of 0x200. */
+  // TODO  0x1000 改成 0x0000
 /**
  * @}
  */

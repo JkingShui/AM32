@@ -53,17 +53,24 @@ uint8_t lsm6ds3_init()
 {
     uint8_t buf[2];
 
-    uint8_t who_am_i;
+    uint8_t who_am_i = 0;
 	uint32_t i;
+    i2c_status_type status;
 
 
     hi2cx.i2cx = I2C2;
     i2c_config(&hi2cx);
 
-    i2c_memory_read(&hi2cx, I2C_MEM_ADDR_WIDIH_8, LSM6DS3_I2C_ADDR, LSM6DS3_WHO_AM_I, &who_am_i, 1, 10000);
-    // i2c_memory_read_dma(&hi2cx, I2C_MEM_ADDR_WIDIH_8, LSM6DS3_I2C_ADDR, LSM6DS3_WHO_AM_I, &who_am_i, 1, 10000);
+    status = i2c_memory_read(&hi2cx, I2C_MEM_ADDR_WIDIH_8, LSM6DS3_I2C_ADDR, LSM6DS3_WHO_AM_I, &who_am_i, 1, 10000);
+    if (status != I2C_OK || who_am_i != LSM6DS3_WHO_AM_I_VALUE)
+    {
+        uart_print_string("lsm6ds3_init first failed\n");
+        for(volatile uint32_t d = 0; d < 100000; d++);
+        who_am_i = 0;
+        status = i2c_memory_read(&hi2cx, I2C_MEM_ADDR_WIDIH_8, LSM6DS3_I2C_ADDR, LSM6DS3_WHO_AM_I, &who_am_i, 1, 10000);
+    }
 
-    if(who_am_i != 0x69)
+    if(who_am_i != LSM6DS3_WHO_AM_I_VALUE)
     {
         // 初始化失败
         uart_print_string("lsm6ds3_init failed\n");

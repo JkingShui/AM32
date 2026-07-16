@@ -101,24 +101,21 @@ void sensor_processor_init(void) {
 
 volatile uint16_t loop_time = 0;
 // TODO 降低更新频率，降低的值还需要确定
-int32_t last_update_time = 0;
 void sensor_processor_update_gyro(void) {
     // 定时更新一次
-    if (get_time_interval_us(last_update_time) >= 1000) {
-        uint8_t ret = lsm6ds3_read_gyro_z(&sensor_data.gyro_z);
-        if(ret == 1)
-        {
-            sensor_data.gyro_z_dps = lsm6ds3_convert_to_dps(sensor_data.gyro_z);
-        } else if(ret == 0)
-        {
-            // 0代表等待中，不处理
-        } else
-        {
-            // 其他错误码，设置为0
-            sensor_data.gyro_z_dps = 0.0f;
-        }
-        last_update_time = UTILITY_TIMER->cval;
+    uint8_t ret = lsm6ds3_read_gyro_z(&sensor_data.gyro_z);
+    if(ret == 1)
+    {
+        sensor_data.gyro_z_dps = lsm6ds3_convert_to_dps(sensor_data.gyro_z);
+    } else if(ret == 0)
+    {
+        // 0代表等待中，不处理
+    } else
+    {
+        // 其他错误码，设置为0
+        sensor_data.gyro_z_dps = 0.0f;
     }
+        
 }
 
 void sensor_processor_update_pwm_input(void) {
@@ -133,16 +130,19 @@ void sensor_processor_update_pwm_input(void) {
 
 // TODO 看下循环时间耗时
 volatile uint32_t last_calculate_time = 0;
+volatile float filtered_error = 0.0f;
 void sensor_processor_calculate(void) {
+    
     uint32_t this_calculate_time = UTILITY_TIMER->cval;
     uint32_t gap_time = get_time_interval_us(last_calculate_time);// 时间间隔，微秒
     
     // 误差 = 手轮 - 陀螺仪 - 中间值
     int32_t input = map_pwm_to_slider(sensor_data.pwm_high_time, eepromBuffer.gyro.servo_range_a, eepromBuffer.gyro.servo_mid, eepromBuffer.gyro.servo_range_b, 30);
-    float error = input - sensor_data.gyro_z_dps - sensor_data.slider;
+    float effective_gain = (sensor_data.gain > 0.01f) ? sensor_data.gain : 1.0f;
+    float error = input / effective_gain - sensor_data.gyro_z_dps - sensor_data.slider;
     
     // 积分项
-    sensor_data.integral += 8.0f * gap_time / 1000000 * error;
+    sensor_data.integral += 10.0f * gap_time / 1000000 * error;
     // 积分项限制
     if (sensor_data.integral > 500) {
         sensor_data.integral = 500;
@@ -151,17 +151,41 @@ void sensor_processor_calculate(void) {
         sensor_data.integral = -500;
     }
 
+    filtered_error = 0.3 * filtered_error + 0.7 * error;
+
     // pi运算
-    sensor_data.slider = 0.8f * error + sensor_data.integral;
+    sensor_data.slider = 0.8f * filtered_error + sensor_data.integral;
 
     // 输出，映射回去
-    // int32_t output_pwm_value = sensor_data.slider * sensor_data.gain;
+    int32_t output_pwm_value = sensor_data.slider * effective_gain;
     // TODO 测试gain 设置1
-    int32_t output_pwm_value = sensor_data.slider;
+    // int32_t output_pwm_value = sensor_data.slider;
     if (output_pwm_value > 0) {
         sensor_data.output_pwm = map(output_pwm_value, 0, 500, eepromBuffer.gyro.servo_mid, eepromBuffer.gyro.servo_mid + eepromBuffer.gyro.servo_range_b);
     } else {
         sensor_data.output_pwm = map(output_pwm_value, -500, 0, eepromBuffer.gyro.servo_mid - eepromBuffer.gyro.servo_range_a, eepromBuffer.gyro.servo_mid);
+    }
+
+    // 串口输出：pwm_high_time, gyro_z_dps, output_pwm_value （CSV逗号分隔，gyro保留2位小数）
+    // 每100次输出一次，避免串口阻塞影响控制频率
+    static uint16_t uart_print_cnt = 0;
+    if (++uart_print_cnt >= 100) {
+        uart_print_cnt = 0;
+        uart_print_number((int32_t)sensor_data.pwm_high_time);
+        uart_print_char(',');
+        uart_print_number((int32_t)output_pwm_value);
+        uart_print_char(',');
+        {
+            float g = sensor_data.gain;
+            int32_t gi = (int32_t)g;
+            int32_t gf = (int32_t)((g - (float)gi) * 100.0f);
+            if (gf < 0) gf = -gf;
+            uart_print_number(gi);
+            uart_print_char('.');
+            if (gf < 10) uart_print_char('0');
+            uart_print_number(gf);
+        }
+        uart_print_string("\r\n");
     }
 
     last_calculate_time = this_calculate_time;

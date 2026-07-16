@@ -322,7 +322,7 @@ void UN_TIM_Init(void)
     INPUT_DMA_CHANNEL->paddr = (uint32_t)&IC_TIMER_REGISTER->c1dt;
     INPUT_DMA_CHANNEL->maddr = (uint32_t)&dma_buffer;
     INPUT_DMA_CHANNEL->dtcnt = buffersize;
-    INPUT_DMA_CHANNEL->ctrl = 0X98a;
+    INPUT_DMA_CHANNEL->ctrl = 0X98a;// TODO 这里应该开始就要使能
     NVIC_SetPriority(IC_DMA_IRQ_NAME, 1);
     NVIC_EnableIRQ(IC_DMA_IRQ_NAME);
 
@@ -330,7 +330,18 @@ void UN_TIM_Init(void)
     IC_TIMER_REGISTER->pr = 0xFFFF;
     IC_TIMER_REGISTER->div = 16;
     IC_TIMER_REGISTER->ctrl1_bit.prben = TRUE;
+
+    // CH1输入捕获配置（PB4油门）
+    IC_TIMER_REGISTER->cm1_input_bit.c1c = 0x1;         // CH1直接映射
+    IC_TIMER_REGISTER->cm1_input_bit.c1idiv = 0x0;      // CH1不分频
+    IC_TIMER_REGISTER->cm1_input_bit.c1df = 0x0A;       // CH1输入滤波：8个采样周期
+    IC_TIMER_REGISTER->cctrl = 0xB;                      // CH1输入捕获使能+上升沿触发
+
     IC_TIMER_REGISTER->ctrl1_bit.tmren = TRUE;
+    IC_TIMER_REGISTER->iden |= TMR_C1_DMA_REQUEST;// 使能定时器 1 通道 1 的 DMA 请求
+    IC_TIMER_REGISTER->swevt_bit.ovfswtr = TRUE;
+
+
 
     // PB5转向输入配置 (TIM3_CH2 + 中断方式)
     gpio_init_type gpio_init_struct;
@@ -342,7 +353,7 @@ void UN_TIM_Init(void)
     gpio_pin_mux_config(GPIOB, GPIO_PINS_SOURCE5, GPIO_MUX_1);
     gpio_init_struct.gpio_pins = GPIO_PINS_5;
     gpio_init_struct.gpio_mode = GPIO_MODE_MUX;
-    gpio_init_struct.gpio_pull = GPIO_PULL_UP;
+    gpio_init_struct.gpio_pull = GPIO_PULL_NONE;
     gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_MODERATE;
     gpio_init(GPIOB, &gpio_init_struct);
 
@@ -350,12 +361,12 @@ void UN_TIM_Init(void)
     tmr_input_struct.input_channel_select = TMR_SELECT_CHANNEL_2;
     tmr_input_struct.input_mapped_select = TMR_CC_CHANNEL_MAPPED_DIRECT;
     tmr_input_struct.input_polarity_select = TMR_INPUT_RISING_EDGE;
-    tmr_input_struct.input_filter_value = 0x0A;
+    tmr_input_struct.input_filter_value = 0x05;
     tmr_input_channel_init(TMR3, &tmr_input_struct, TMR_CHANNEL_INPUT_DIV_1);
 
     /* enable capture interrupt */
     tmr_interrupt_enable(TMR3, TMR_C2_INT, TRUE);
-    NVIC_SetPriority(TMR3_GLOBAL_IRQn, 2);
+    NVIC_SetPriority(TMR3_GLOBAL_IRQn, 1);
     NVIC_EnableIRQ(TMR3_GLOBAL_IRQn);
     tmr_counter_enable(TMR3, TRUE);
 }
@@ -466,6 +477,9 @@ void enableCorePeripherals()
     tmr_channel_enable(TMR1, TMR_SELECT_CHANNEL_2C, TRUE);
     tmr_channel_enable(TMR1, TMR_SELECT_CHANNEL_3C, TRUE);
 
+    // 油门输入dma使能
+    INPUT_DMA_CHANNEL->ctrl = 0X98B;
+
     TMR1->ctrl1_bit.tmren = TRUE;
     TMR1->brk_bit.oen = TRUE;
     TMR1->swevt |= TMR_OVERFLOW_SWTRIG;
@@ -493,6 +507,7 @@ void enableCorePeripherals()
     IC_TIMER_REGISTER->ctrl1_bit.tmren = TRUE;
 #endif
 
+    // 油门信号中断
     NVIC_SetPriority(EXINT15_4_IRQn, 2);
     NVIC_EnableIRQ(EXINT15_4_IRQn);
     EXINT->inten |= EXINT_LINE_15;
@@ -527,12 +542,16 @@ void button_led_init(void)
 }
 
 /**
- * @brief 读取按键电平
- * @return 1 - 按键按下（低电平）
- *         0 - 按键释放（高电平）
+ * @brief 读取按键状态（带消抖）
+ * @note  硬件接法：PB3内部上拉（GPIO_PULL_UP），按键一端接PB3，另一端接GND
+ *        按键按下 → PB3被拉到GND（低电平/RESET）→ 本函数返回1
+ *        按键释放 → PB3被上拉到VDD（高电平/SET）→ 本函数返回0
+ * @return 1 - 按键按下
+ *         0 - 按键释放
  */
 uint8_t button_read(void)
 {
+    // 内部上拉 + 按下接GND → RESET对应"按下"状态
     uint8_t first = (gpio_input_data_bit_read(GPIOB, GPIO_PINS_3) == RESET) ? 1 : 0;
     
     // 延时约10ms消抖
@@ -540,9 +559,10 @@ uint8_t button_read(void)
     
     uint8_t second = (gpio_input_data_bit_read(GPIOB, GPIO_PINS_3) == RESET) ? 1 : 0;
     
-    // 两次读取一致则认为状态稳定
+    // 两次读取一致则认为状态稳定，不一致则视为未按（释放）
     return (first == second) ? first : 0;
 }
+
 
 /**
  * @brief 设置LED状态

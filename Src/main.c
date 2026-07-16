@@ -319,7 +319,7 @@ uint32_t process_time = 0;
 uint32_t start_process = 0;
 uint16_t one_khz_loop_counter = 0;
 uint16_t center_deadband_timer = 0;  // 中心死区停留计时器（用于方向切换延迟）
-#define CENTER_DEADBAND_DELAY 120 // 中心死区停留延迟（单位：次循环）
+#define CENTER_DEADBAND_DELAY 100 // 中心死区停留延迟（单位：次循环）
 uint16_t target_e_com_time_high;
 uint16_t target_e_com_time_low;
 uint8_t compute_dshot_flag = 0;
@@ -356,6 +356,8 @@ uint16_t current_angle = 90;
 uint16_t desired_angle = 90;
 // 是否要回到中位，用于反向、制动判断，如果要反向必须先回到中位
 char return_to_center = 0;
+// 正弦模式触发方向锁：只有从"接近0油门"起步才允许进正弦，高→低收油sine_from_zero_ok=0，会拦掉
+char sine_from_zero_ok = 0;
 uint16_t target_e_com_time = 0;
 int16_t Speed_pid_output;
 char use_speed_control_loop = 0;
@@ -376,14 +378,6 @@ uint16_t velocity_count_threshold = 75;
 
 // 低速限制占空比
 char low_rpm_throttle_limit = 0;
-
-// ==================== 发动机转速限制功能 ====================
-#define RPM_LIMIT_DROP_PERCENT    50      // 掉回转速占最高转速的百分比（可配置）
-#define RPM_LIMIT_LOW_DUTY_PERCENT 80     // 低转速阶段的占空比百分比（可配置）
-#define RPM_LIMIT_LOW_DURATION_MS  5    // 低转速持续时间（ms，可配置）
-#define THROTTLE_95_PERCENT       1945    // 油门95%对应的数值 (2047 * 0.95)
-#define RPM_LIMIT_DELAY_MS        500     // 开启转速限制前的等待时间（ms）
-#define RPM_LIMIT_HYSTERESIS      50      // 转速判断滞环（erpm/100）
 
 // 转速限制状态变量
 char rpm_limit_active = 0;        // 是否开启转速限制
@@ -587,6 +581,11 @@ uint16_t armed_count_threshold = 1000;
 char armed = 0;
 uint16_t zero_input_count = 0;
 
+uint32_t adc_counter = 0;
+#define BUTTON_HOLD_SHUTDOWN_COUNT  100
+uint16_t button_hold_count = 0;
+char is_shutdown = FALSE;// 是否关机
+
 uint16_t input = 0;
 uint16_t newinput = 0;
 // 检测到有效输入信号
@@ -669,13 +668,85 @@ int32_t doPidCalculations(struct fastPID* pidnow, int actual, int target)
     return pidnow->pid_output;
 }
 
+
+void setEepromParams()
+{
+    // 固定参数 —— 严格按 Inc/eeprom.h 结构体定义顺序赋值（对应注释中的偏移号）
+
+    // ========== 偏移 0-16：头部基础字段 ==========
+    eepromBuffer.reserved_0 = 0;                                           // 0  保留字段
+    eepromBuffer.eeprom_version = EEPROM_VERSION;                          // 1  EEPROM版本号
+    eepromBuffer.reserved_1 = 17;                                           // 2  保留字段
+    eepromBuffer.version.major = VERSION_MAJOR;                            // 3  固件主版本号
+    eepromBuffer.version.minor = VERSION_MINOR;                            // 4  固件次版本号
+    eepromBuffer.max_ramp = 95;                                            // 5  最大油门斜率（80→8%/ms，0.1%/ms步长）
+    eepromBuffer.minimum_duty_cycle = 1;                                   // 6  最小占空比（2→约0.4%，步长0.2%）
+    eepromBuffer.disable_stick_calibration = 0;                            // 7  禁用摇杆校准（0=启用校准）
+    eepromBuffer.absolute_voltage_cutoff = 12;                             // 8  绝对电压截止（12→6.0V，步长0.5V）
+    eepromBuffer.current_P = 100;                                          // 9  电流PID的P
+    eepromBuffer.current_I = 0;                                            // 10 电流PID的I
+    eepromBuffer.current_D = 100;                                          // 11 电流PID的D
+    eepromBuffer.active_brake_power = 5;                                   // 12 主动制动功率（0关闭，1-5对应1~5%）
+    eepromBuffer.reserved_eeprom_3[0] = 255;                                 // 13 保留
+    eepromBuffer.reserved_eeprom_3[1] = 255;                                 // 14 保留
+    eepromBuffer.reserved_eeprom_3[2] = 255;                                 // 15 保留
+    eepromBuffer.reserved_eeprom_3[3] = 255;                                 // 16 保留
+
+    // ========== 偏移 17-31：电机驱动核心控制字段 ==========
+    eepromBuffer.dir_reversed = 0;                                         // 17 方向反转（0=正常，1=反转）
+    eepromBuffer.bi_direction = 1;                                         // 18 双向模式（1=RC车正反转）
+    // TODO 正弦启动
+    eepromBuffer.use_sine_start = 0;                                       // 19 正弦波启动（1=开启，启动更顺滑）
+    eepromBuffer.comp_pwm = 1;                                             // 20 互补PWM（1=开启，6管驱动必须开）
+    eepromBuffer.variable_pwm = 0;                                         // 21 可变PWM频率（1=开启，高转速自动提频）
+    eepromBuffer.stuck_rotor_protection = 1;                               // 22 卡转子保护（1=开启，堵转关输出）
+    eepromBuffer.advance_level = 14;                                       // 23 提前角（22→实际12°，步长1°：eeprom值-10）
+    eepromBuffer.pwm_frequency = 48;                                       // 24 PWM频率（48→约48kHz，适合高KV）
+    eepromBuffer.startup_power = 50;                                       // 25 启动功率（minimum_duty基础上+80）
+    eepromBuffer.motor_kv = 151;                                           // 26 电机KV（150→150*40+20=6020KV）
+    eepromBuffer.motor_poles = 12;                                         // 27 电机极数（总极数12，N+S总数）
+    eepromBuffer.brake_on_stop = 0;                                        // 28 停止时制动（0=关闭，刹车走新逻辑）
+    eepromBuffer.stall_protection = 0;                                     // 29 失速保护级别（0=关闭）
+    eepromBuffer.beep_volume = 8;                                         // 30 蜂鸣音量（0-100，50%适中）
+    eepromBuffer.telemetry_on_interval = 0;                                // 31 遥测间隔（0=关闭）
+
+    // ========== 偏移 32-35：舵机/PWM输入配置 ==========
+    eepromBuffer.servo.low_threshold = 128;                                // 32 舵机低阈值（125→125*2+750=1000us）
+    eepromBuffer.servo.high_threshold = 128;                               // 33 舵机高阈值（125→125*2+1750=2000us）
+    eepromBuffer.servo.neutral = 126;                                      // 34 舵机中立点（126→126+1374=1500us）
+    eepromBuffer.servo.dead_band = 50;                                     // 35 舵机死区（±10us，防中位抖动）
+
+    // ========== 偏移 36-47：保护/功能选择/杂项 ==========
+    eepromBuffer.low_voltage_cut_off = 2;                                  // 36 低压截止（2=基于电池类型的阈值）
+    eepromBuffer.low_cell_volt_cutoff = 50;                                // 37 低电芯截止（50→2.50+0.50=3.00V/电芯）
+    eepromBuffer.rc_car_reverse = 1;                                       // 38 RC车专用双击倒车（1=开启）
+    eepromBuffer.use_hall_sensors = 0;                                     // 39 霍尔传感器（0=关闭，用无感FOC/六步）
+    eepromBuffer.sine_mode_changeover_thottle_level = 21;                  // 40 正弦→六步切换阈值（30%油门）
+    eepromBuffer.drag_brake_strength = 10;                                 // 41 拖拽制动强度（30%，松油门滑行感）
+    eepromBuffer.driving_brake_strength = 10;                              // 42 行车制动强度（80%，刹车力度）
+    eepromBuffer.limits.temperature = 60;                                  // 43 温度限制（60°C）
+    eepromBuffer.limits.current = 102;                                      // 44 电流限制（80A）
+    eepromBuffer.sine_mode_power = 8;                                     // 45 正弦模式功率（80%）
+    eepromBuffer.input_type = 2;                                           // 46 输入类型（0=标准PWM舵机信号）
+    eepromBuffer.auto_advance = 1;                                         // 47 自动提前角（1=开启，随转速自动跟踪）
+
+    // ========== 偏移 176起：gyro 陀螺仪/舵机辅助参数 ==========
+    if (eepromBuffer.gyro.reverse > 1) {
+        eepromBuffer.gyro.reverse = 0;                                         // gyro 正反向（0=正）
+        eepromBuffer.gyro.servo_mid = 1500;                                    // gyro 舵机中位（1500us）
+        eepromBuffer.gyro.servo_range_a = 1000;                                // gyro 范围A（左行程1000us）
+        eepromBuffer.gyro.servo_range_b = 2000;                                // gyro 范围B（右行程2000us）
+    }
+}
+
 void loadEEpromSettings()
 {
     // 从FLASH读取EEPROM设置
     // @note 读取的EEPROM设置将覆盖当前的EEPROM设置
     read_flash_bin(eepromBuffer.buffer, eeprom_address, sizeof(eepromBuffer.buffer));
-    // rc模式一定要有反转
-    eepromBuffer.rc_car_reverse = 1;
+    // 设置固定参数
+    setEepromParams();
+
     if(eepromBuffer.eeprom_version < EEPROM_VERSION){
       eepromBuffer.max_ramp = 160;    // 0.1% per ms to 25% per ms 
       eepromBuffer.minimum_duty_cycle = 1; // 0.2% to 51 percent
@@ -1074,6 +1145,8 @@ void setInput()
         // 在中心等待1秒后，清除返回中心标志（允许任意方向运行）
         if (return_to_center && center_deadband_timer >= CENTER_DEADBAND_DELAY) {
             return_to_center = 0;
+            // 回到中位才能开始正弦波
+            sine_from_zero_ok = 1;
         }
     } else {
         // 离开中心死区，如果不需要返回中心则重置计时器
@@ -1223,15 +1296,17 @@ void setInput()
                     phase_C_position -= 360;
                 }
 
-                if (eepromBuffer.use_sine_start == 1) {
+                // 低油门，并且正转，并且从0开始才允许进正弦波
+                if (eepromBuffer.use_sine_start == 1 && sine_from_zero_ok == 1) {
                     stepper_sine = 1;
                 }
                 duty_cycle_setpoint = 0;
             }
         }
         if (!prop_brake_active) {
-            // 启动时的占空比限制
-            if (input >= 47 && (zero_crosses < (uint32_t)(30 >> eepromBuffer.stall_protection))) {
+            // 启动时的占空比限制：只有在低速启动时才限制，高速失步恢复时不限制
+            // commutation_interval > 2000 表示低速状态
+            if (input >= 47 && (zero_crosses < (uint32_t)(30 >> eepromBuffer.stall_protection)) && commutation_interval > 2000) {
                 if (duty_cycle_setpoint < min_startup_duty) {
                     duty_cycle_setpoint = min_startup_duty;
                 }
@@ -1281,42 +1356,6 @@ void setInput()
  */
 void tenKhzRoutine()
 { // 20khz as of 2.00 to be renamed
-
-    // ==================== 发动机转速限制 - 占空比调节 ====================
-    if (rpm_limit_active && rpm_limit_running && running) {
-        // 调试输出：显示转速限制状态
-        // uart_print_string("RPM Limit! ");
-        // uart_print_string("State: ");
-        // uart_print_number(rpm_switch_state);
-        // uart_print_string(" RPM: ");
-        // uart_print_number(e_rpm);
-        // uart_print_string(" High: ");
-        // uart_print_number(rpm_limit_high);
-        // uart_print_string(" Low: ");
-        // uart_print_string("\n");
-        
-        // 根据当前状态调整占空比
-        if (rpm_switch_state == 0) {
-            // 高转速阶段：当前转速达到最高转速，切换到低转速阶段
-            if (e_rpm >= rpm_limit_high - RPM_LIMIT_HYSTERESIS) {
-                rpm_switch_state = 1; // 切换到低转速阶段
-                rpm_low_duration_count = 0; // 重置低转速持续时间
-            }
-            // 使用正常占空比（保持高转速）
-        } else {
-            // 低转速阶段：降低占空比到设定百分比
-            uint16_t duty_ratio = RPM_LIMIT_LOW_DUTY_PERCENT;
-            duty_cycle_setpoint = (duty_cycle_setpoint * duty_ratio) / 100.0f;
-            // if (duty_cycle_setpoint < minimum_duty_cycle) {
-            //     duty_cycle_setpoint = minimum_duty_cycle;
-            // }
-            
-            // 持续低转速一段时间后，切换回高转速阶段
-            if (rpm_low_duration_count >= RPM_LIMIT_LOW_DURATION_MS) {
-                rpm_switch_state = 0; // 切换回高转速阶段
-            }
-        }
-    }
 
     // 更新占空比为设定值
     duty_cycle = duty_cycle_setpoint;
@@ -1394,6 +1433,7 @@ void tenKhzRoutine()
     if (!stepper_sine) {// 用于标识电机是否处于 正弦步进启动模式 。
         // 轮询模式且电机运行时
         if (old_routine && running) {
+            sine_from_zero_ok = 0;// 转起来就禁用正弦模式
             // 屏蔽相位中断
             maskPhaseInterrupts();
             // 获取BEMF状态
@@ -1423,43 +1463,6 @@ void tenKhzRoutine()
             PROCESS_ADC_FLAG = 1; // set flag to do new adc read at lower priority
             one_khz_loop_counter = 0;
             
-            // ==================== 发动机转速限制功能 ====================
-            // 计算当前电转速 e_rpm (erpm/100)
-            
-            // 开启条件：油门到达95%以上持续0.5s
-            if (adjusted_input >= THROTTLE_95_PERCENT && running) {
-                throttle_high_count++;
-                // 持续记录最高转速（用于初始化）,已经在最高转速就不再更新
-                if (e_rpm > rpm_limit_high && !rpm_limit_active) {
-                    rpm_limit_high = e_rpm;
-                }
-                // 持续0.5秒后开启转速限制
-                if (throttle_high_count >= RPM_LIMIT_DELAY_MS && !rpm_limit_active) {
-                    rpm_limit_active = 1;
-                    rpm_switch_state = 0; // 初始状态：高转速阶段
-                    rpm_limit_running = 0; // 还未开始跳动
-                }
-                
-                // 如果已经开启转速限制，检查是否达到最高转速
-                if (rpm_limit_active && !rpm_limit_running) {
-                    // 转速达到最高转速时开始跳动
-                    if (e_rpm >= rpm_limit_high - RPM_LIMIT_HYSTERESIS) {
-                        rpm_limit_running = 1;
-                    }
-                }
-                
-                // 低转速持续时间计数器递增（在1kHz循环中）
-                if (rpm_limit_active && rpm_limit_running && rpm_switch_state == 1) {
-                    rpm_low_duration_count++;
-                }
-            } else {
-                // 关闭条件：油门在95%以下
-                throttle_high_count = 0;
-                if (rpm_limit_active) {
-                    rpm_limit_active = 0;
-                    rpm_limit_high = 0;
-                }
-            }
             
             // 失速保护调整（用于攀爬车和RC车，不建议多旋翼使用）
             if (eepromBuffer.stall_protection && running) { // this boosts throttle as the rpm gets lower, for crawlers
@@ -1511,7 +1514,8 @@ void tenKhzRoutine()
             if (eepromBuffer.variable_pwm) {
             }
             // 计算调整后的占空比（带最小脉冲宽度）
-            adjusted_duty_cycle = ((duty_cycle * tim1_arr) / 2000) + 1;
+            // 限制最大占空比
+            adjusted_duty_cycle = ((duty_cycle * tim1_arr) / 2200) + 1;
 
         } else {
             // 非运行状态或输入小于阈值
@@ -1544,15 +1548,15 @@ void tenKhzRoutine()
 
 void processDshot()
 {
-    if (compute_dshot_flag == 1) {
-        computeDshotDMA();
-        compute_dshot_flag = 0;
-    }
-    if (compute_dshot_flag == 2) {
-        make_dshot_package(e_com_time);
-        compute_dshot_flag = 0;
-        return;
-    }
+    // if (compute_dshot_flag == 1) {
+    //     computeDshotDMA();
+    //     compute_dshot_flag = 0;
+    // }
+    // if (compute_dshot_flag == 2) {
+    //     make_dshot_package(e_com_time);
+    //     compute_dshot_flag = 0;
+    //     return;
+    // }
     setInput();
 }
 
@@ -1655,12 +1659,14 @@ void zcfoundroutine()
         // 换相次数超过20次且换相间隔小于等于2000时，切换到中断模式
         if (zero_crosses >= 20 && commutation_interval <= 2000) {
             old_routine = 0;
+            sine_from_zero_ok = 0;// 转起来就禁用正弦模式
             enableCompInterrupts(); // enable interrupt
         }
     } else {
         // // 正常模式：转速超过polling_mode_changeover阈值
        if (commutation_interval < polling_mode_changeover) {
             old_routine = 0;
+            sine_from_zero_ok = 0;// 转起来就禁用正弦模式
             enableCompInterrupts(); // enable interrupt
         }
     }
@@ -1763,14 +1769,25 @@ static void checkDeviceInfo(void)
 
 void epaSetting() 
 {
-    // 判断按键按下
-    if (button_read() == 0) {
-        return;
+    #define EPA_LONG_PRESS_MS  2000   // 长按时长（毫秒）
+    // button_read()每次自带10ms消抖延时，循环次数 = 总时长 / 10ms
+    #define EPA_LOOP_COUNT     (EPA_LONG_PRESS_MS / 10)
+
+    // 先快速判断一次，没按直接return，不阻塞
+    if (!button_is_pressed()) return;
+
+    // 循环EPA_LOOP_COUNT次，每次≈10ms（button_read内部消抖延时）
+    // 任意一次发现松开就直接return
+    for (uint16_t i = 0; i < EPA_LOOP_COUNT; i++) {
+        RELOAD_WATCHDOG_COUNTER();
+        if (!button_is_pressed()) return;
     }
+    uart_print_string("epaSetting...\n");
+
     // 闪灯提示
     led_blink_fast_3x();
     // 等待松开，防止一直按住误操作
-    while (button_read() == 1)
+    while (button_is_pressed())
     {
         delayMillis(20);
     }
@@ -1788,7 +1805,7 @@ void epaSetting()
         // 输出到舵机
         tmr_channel_value_set(TMR15, TMR_SELECT_CHANNEL_1, val);
         // 按钮确认设置
-        if (button_read() == 1)
+        if (button_is_pressed())
         {
             // 获取设置的值
             eepromBuffer.gyro.servo_mid = val;
@@ -1800,7 +1817,7 @@ void epaSetting()
     }
 
     // 等待松开，防止一直按住误操作
-    while (button_read() == 1)
+    while (button_is_pressed())
     {
         delayMillis(20);
     }
@@ -1817,7 +1834,7 @@ void epaSetting()
         // 输出到舵机
         tmr_channel_value_set(TMR15, TMR_SELECT_CHANNEL_1, val);
         // 按钮确认设置
-        if (button_read() == 1)
+        if (button_is_pressed())
         {
             // 获取设置的值
             left = val - eepromBuffer.gyro.servo_mid;
@@ -1841,7 +1858,7 @@ void epaSetting()
     }
 
     // 等待松开，防止一直按住误操作
-    while (button_read() == 1)
+    while (button_is_pressed())
     {
         delayMillis(20);
     }
@@ -1856,7 +1873,7 @@ void epaSetting()
         // 输出到舵机
         tmr_channel_value_set(TMR15, TMR_SELECT_CHANNEL_1, val);
         // 按钮确认设置,右边应该跟左边是相反的数值，加一层判断用来防止用户一直往左边打设置两次左边
-        if (button_read() == 1 && sgn(val - eepromBuffer.gyro.servo_mid) != sgn(left))
+        if (button_is_pressed() && sgn(val - eepromBuffer.gyro.servo_mid) != sgn(left))
         {
             // 获取设置的值
             int param = val - eepromBuffer.gyro.servo_mid;
@@ -1893,10 +1910,10 @@ int main(void)
     checkDeviceInfo();
     initCorePeripherals();
     mos_button_set(1);// keep mos switch on
-    led_set(1);
     enableCorePeripherals();
     loadEEpromSettings();
     epaSetting();
+    led_set(1);
 
     if (VERSION_MAJOR != eepromBuffer.version.major || VERSION_MINOR != eepromBuffer.version.minor || EEPROM_VERSION > eepromBuffer.eeprom_version) {
         eepromBuffer.version.major = VERSION_MAJOR;
@@ -1915,44 +1932,12 @@ int main(void)
     }
     
     tim1_arr = TIMER1_MAX_ARR;
-
-    if (eepromBuffer.rc_car_reverse) { // overrides a whole lot of things!
-        throttle_max_at_low_rpm = 1000;// 低转速最大油门
-        eepromBuffer.bi_direction = 1;// 正反转切换
-        // 允许正弦波启动
-        // eepromBuffer.use_sine_start = 0;
-        // low_rpm_throttle_limit = 1;
-
-        // 允许可变占空比
-        // eepromBuffer.variable_pwm = 0;
-        // eepromBuffer.stall_protection = 1;
-        // 允许互补PWM
-        // eepromBuffer.comp_pwm = 0;
-        eepromBuffer.stuck_rotor_protection = 0;// 关闭堵转保护（RC车可能故意堵转
-        // minimum_duty_cycle = minimum_duty_cycle + 50;// 增加最小占空比，提高启动扭矩
-        // stall_protect_minimum_duty = stall_protect_minimum_duty + 50;// 提高失速保护的最小占空比
-        // min_startup_duty = min_startup_duty + 50;// 增加最小启动占空比，提高启动扭矩
-    }
-    // 参数固定
-    eepromBuffer.dir_reversed = 0;// 正常方向
-    eepromBuffer.bi_direction = 1;// 正反向模式
-    eepromBuffer.use_sine_start = 1;// 允许正弦波启动
-    eepromBuffer.comp_pwm = 1;// 允许互补PWM
-    // TODO pwm频率暂定
-    eepromBuffer.stuck_rotor_protection = 1;// 开启堵转保护
-    eepromBuffer.brake_on_stop = 0;// 刹车有新的逻辑，不用根据这个参数
-    // TODO 测试有什么区别
-    eepromBuffer.stall_protection = 0;
-    eepromBuffer.low_voltage_cut_off = 2;// 电压限制
-    eepromBuffer.absolute_voltage_cutoff = 12;// 6v
-    // TODO 温度限制暂定
-    eepromBuffer.limits.temperature = 60;// 温度限制，单位摄氏度
-
+    throttle_max_at_low_rpm = 1000;// 低转速最大油门
 
     playStartupTune();
 
     zero_input_count = 0;
-    // MX_IWDG_Init();
+    // MX_IWDG_Init(); TODO 看门狗启用
     // RELOAD_WATCHDOG_COUNTER();
 
     // checkForHighSignal();     // will reboot if signal line is high for 10ms
@@ -1988,12 +1973,29 @@ int main(void)
         //     }
         // }
         
-        // 传感器数据处理
-        sensor_processor_update_gyro();
-        sensor_processor_update_pwm_input();
-        sensor_processor_calculate();
-        sensor_processor_update_output();
+        // 传感器数据处理 1ms 处理一次
+        static uint32_t last_update_time;
+        if (get_time_interval_us(last_update_time) >= 1000) {
+            sensor_processor_update_gyro();
+            sensor_processor_update_pwm_input();
+            sensor_processor_calculate();
+            sensor_processor_update_output();
+            last_update_time = UTILITY_TIMER->cval;
+        }
+    
+        // static uint32_t last_time = 0;
+        // uint32_t gatTime = UTILITY_TIMER->cval - last_time;
+        // last_time = UTILITY_TIMER->cval;
         
+        // // 每100次 打印waitTime
+        // static uint32_t waitTime_counter = 0;
+        // if (++waitTime_counter >= 100) {
+        //     waitTime_counter = 0;
+        //     // 打印循环时间
+
+        //     uart_print_number(gatTime);
+        //     uart_print_string("\r\n");
+        // }
         
         // COMMUTATION INTERVAL IS 0.5US INCREMENTS
         // 因为120Mhz，60分频，所以计数器1代表0.5us，周期 = 计数值/2，单位us
@@ -2115,31 +2117,22 @@ int main(void)
             last_average_interval = average_interval;
         }
 
-#if !defined(MCU_G031) && !defined(NEED_INPUT_READY)
-        if (dshot_telemetry && (commutation_interval > DSHOT_PRIORITY_THRESHOLD)) {
-             NVIC_SetPriority(IC_DMA_IRQ_NAME, 0);
-             NVIC_SetPriority(COM_TIMER_IRQ, 1);
-             NVIC_SetPriority(COMPARATOR_IRQ, 1);
-         } else {
-             NVIC_SetPriority(IC_DMA_IRQ_NAME, 1);
-             NVIC_SetPriority(COM_TIMER_IRQ, 0);
-             NVIC_SetPriority(COMPARATOR_IRQ, 0);
-         }
-#endif
-        if (send_telemetry) {
-#ifdef USE_SERIAL_TELEMETRY
-            makeTelemPackage((int8_t)degrees_celsius, battery_voltage, actual_current,
-                (uint16_t)(consumed_current >> 16), e_rpm);
-            send_telem_DMA(10);
-            send_telemetry = 0;
-#endif
-        } else if(send_esc_info_flag ) {
-           makeInfoPacket();
-           send_telem_DMA(49);
-           send_esc_info_flag = 0;
-        }
+        // 没有时间要求，隔一段时间处理一次
+        if (++adc_counter >= 2000) {
+            adc_counter = 0;
+            // 按键关机，检测到按键按下后持续按住1秒才关机
+            if (gpio_input_data_bit_read(GPIOB, GPIO_PINS_3) == RESET) {
+                button_hold_count++;
+                if (button_hold_count >= BUTTON_HOLD_SHUTDOWN_COUNT && !is_shutdown) {
+                    led_blink_fast(3, 100);
+                    mos_button_set(0);
+                    // 加一个关机检测，防止按键不释放一直重复关机
+                    is_shutdown = TRUE;
+                }
+            } else {
+                button_hold_count = 0;
+            }
 
-        if (PROCESS_ADC_FLAG == 1) { // for adc and telemetry set adc counter at 1khz loop rate
             ADC_DMA_Callback();
             adc_ordinary_software_trigger_enable(ADC1, TRUE);
             // TODO 过温保护
@@ -2176,8 +2169,6 @@ int main(void)
             if (low_voltage_count > 1000) {      // 10 second wait before cut-off for low voltage
               LOW_VOLTAGE_CUTOFF = 1;
              }
-           
-            PROCESS_ADC_FLAG = 0;
         }
 
         stuckcounter = 0;
@@ -2214,6 +2205,7 @@ int main(void)
 
             // 根据油门进角，增加turbo模式
             if (eepromBuffer.auto_advance) {
+                // TODO 测试没有进角
                 // duty_cycle 95% 时，turbo模式开启
                 if (duty_cycle > duty_cycle_maximum * 0.95) {
                     auto_advance_level = 32;

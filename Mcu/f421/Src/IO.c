@@ -45,13 +45,13 @@ void changeToInput()
 }
 void receiveDshotDma()
 {
-    changeToInput();
+    changeToInput(); // 永远是输入，不可能切到输出去
     IC_TIMER_REGISTER->cval = 0;
     INPUT_DMA_CHANNEL->paddr = (uint32_t)&IC_TIMER_REGISTER->c1dt;
     INPUT_DMA_CHANNEL->maddr = (uint32_t)&dma_buffer;
     INPUT_DMA_CHANNEL->dtcnt = buffersize;
-    IC_TIMER_REGISTER->iden |= TMR_C1_DMA_REQUEST;
-    IC_TIMER_REGISTER->ctrl1_bit.tmren = TRUE;
+    IC_TIMER_REGISTER->iden |= TMR_C1_DMA_REQUEST;// 使能定时器 1 通道 1 的 DMA 请求
+    IC_TIMER_REGISTER->ctrl1_bit.tmren = TRUE;// 使能定时器
     INPUT_DMA_CHANNEL->ctrl = 0x0000098b;
 
     PB5_TMR3_CH2_Resume();
