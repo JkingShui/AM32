@@ -318,8 +318,9 @@ uint16_t ramp_count;
 uint32_t process_time = 0;
 uint32_t start_process = 0;
 uint16_t one_khz_loop_counter = 0;
-uint16_t center_deadband_timer = 0;  // 中心死区停留计时器（用于方向切换延迟）
-#define CENTER_DEADBAND_DELAY 100 // 中心死区停留延迟（单位：次循环）
+uint32_t center_last_timer = 0;
+uint32_t center_deadband_timer = 0;  // 中心死区停留计时器（用于方向切换延迟）
+#define CENTER_DEADBAND_DELAY 1000000 // 中心死区停留延迟（单位：us）
 uint16_t target_e_com_time_high;
 uint16_t target_e_com_time_low;
 uint8_t compute_dshot_flag = 0;
@@ -376,8 +377,8 @@ char maximum_throttle_change_ramp = 1;
 uint16_t velocity_count = 0;
 uint16_t velocity_count_threshold = 75;
 
-// 低速限制占空比
-char low_rpm_throttle_limit = 0;
+// 低速限制占空比 TODO 验证
+char low_rpm_throttle_limit = 1;
 
 // 转速限制状态变量
 char rpm_limit_active = 0;        // 是否开启转速限制
@@ -434,7 +435,7 @@ uint16_t TIMER1_MAX_ARR = TIM1_AUTORELOAD; // maximum auto reset register value
 uint16_t duty_cycle_maximum = 2000; // restricted by temperature or low rpm throttle protect
 uint16_t low_rpm_level = 20; // thousand erpm used to set range for throttle resrictions
 uint16_t high_rpm_level = 70; //
-uint16_t throttle_max_at_low_rpm = 400;
+uint16_t throttle_max_at_low_rpm = 800; // 低转速最大油门限制
 uint16_t throttle_max_at_high_rpm = 2000;
 
 /**
@@ -582,7 +583,7 @@ char armed = 0;
 uint16_t zero_input_count = 0;
 
 uint32_t adc_counter = 0;
-#define BUTTON_HOLD_SHUTDOWN_COUNT  100
+#define BUTTON_HOLD_SHUTDOWN_COUNT  50
 uint16_t button_hold_count = 0;
 char is_shutdown = FALSE;// 是否关机
 
@@ -680,8 +681,8 @@ void setEepromParams()
     eepromBuffer.version.major = VERSION_MAJOR;                            // 3  固件主版本号
     eepromBuffer.version.minor = VERSION_MINOR;                            // 4  固件次版本号
     eepromBuffer.max_ramp = 95;                                            // 5  最大油门斜率（80→8%/ms，0.1%/ms步长）
-    eepromBuffer.minimum_duty_cycle = 1;                                   // 6  最小占空比（2→约0.4%，步长0.2%）
-    eepromBuffer.disable_stick_calibration = 0;                            // 7  禁用摇杆校准（0=启用校准）
+    eepromBuffer.minimum_duty_cycle = 20;                                   // 6  最小占空比（2→约0.4%，步长0.2%）
+    eepromBuffer.disable_stick_calibration = 1;                            // 7  禁用摇杆校准（0=启用校准）
     eepromBuffer.absolute_voltage_cutoff = 12;                             // 8  绝对电压截止（12→6.0V，步长0.5V）
     eepromBuffer.current_P = 100;                                          // 9  电流PID的P
     eepromBuffer.current_I = 0;                                            // 10 电流PID的I
@@ -696,13 +697,14 @@ void setEepromParams()
     eepromBuffer.dir_reversed = 0;                                         // 17 方向反转（0=正常，1=反转）
     eepromBuffer.bi_direction = 1;                                         // 18 双向模式（1=RC车正反转）
     // TODO 正弦启动
-    eepromBuffer.use_sine_start = 0;                                       // 19 正弦波启动（1=开启，启动更顺滑）
+    eepromBuffer.use_sine_start = 1;                                       // 19 正弦波启动（1=开启，启动更顺滑）
     eepromBuffer.comp_pwm = 1;                                             // 20 互补PWM（1=开启，6管驱动必须开）
+    // TODO 可变驱动频率会造成占空比抖动影响速度
     eepromBuffer.variable_pwm = 0;                                         // 21 可变PWM频率（1=开启，高转速自动提频）
     eepromBuffer.stuck_rotor_protection = 1;                               // 22 卡转子保护（1=开启，堵转关输出）
     eepromBuffer.advance_level = 14;                                       // 23 提前角（22→实际12°，步长1°：eeprom值-10）
     eepromBuffer.pwm_frequency = 48;                                       // 24 PWM频率（48→约48kHz，适合高KV）
-    eepromBuffer.startup_power = 50;                                       // 25 启动功率（minimum_duty基础上+80）
+    eepromBuffer.startup_power = 60;                                       // 25 启动功率（minimum_duty基础上+80）
     eepromBuffer.motor_kv = 151;                                           // 26 电机KV（150→150*40+20=6020KV）
     eepromBuffer.motor_poles = 12;                                         // 27 电机极数（总极数12，N+S总数）
     eepromBuffer.brake_on_stop = 0;                                        // 28 停止时制动（0=关闭，刹车走新逻辑）
@@ -794,12 +796,6 @@ void loadEEpromSettings()
     startup_max_duty_cycle = minimum_duty_cycle + 400;  
 
     motor_kv = (eepromBuffer.motor_kv * 40) + 20;
-#ifdef THREE_CELL_MAX
-		motor_kv =  motor_kv / 2;
-#endif
-#ifdef ONE_TWO_CELL_MAX
-		motor_kv =  motor_kv / 16;
-#endif
     setVolume(2);
     if (eepromBuffer.eeprom_version > 0) { // these commands weren't introduced until eeprom version 1.
 #ifdef CUSTOM_RAMP
@@ -1098,20 +1094,23 @@ void startMotor()
  * 该函数根据输入信号类型（PWM或DShot）和配置参数，
  * 计算电机的控制值，处理方向切换、制动和启动逻辑。
  */
+uint16_t filter_newinput = 0;
 void setInput()
 {
+    // 滤波
+    filter_newinput = (filter_newinput * 3 + newinput) / 4;
     // 正向输入（大于中心值）
-    if (newinput > (1000 + (servo_dead_band << 1))) {
+    if (filter_newinput > (1000 + (servo_dead_band << 1))) {
         // 前进无视当前方向，直接换相
         forward = 1 - eepromBuffer.dir_reversed;
         full_brake_active = 0;
         return_to_center = 1;
         center_deadband_timer = 0;
-        adjusted_input = map(newinput, 1000 + (servo_dead_band << 1), 2000, 47, 2047);
+        adjusted_input = map(filter_newinput, 1000 + (servo_dead_band << 1), 2000, 47, 2047);
     }
 
     // 反向输入（小于中心值）
-    if (newinput < (1000 - (servo_dead_band << 1))) {
+    if (filter_newinput < (1000 - (servo_dead_band << 1))) {
         // 如果当前方向与设定方向相反，并且还在转动中，启用比例制动
         if (forward == (1 - eepromBuffer.dir_reversed) && return_to_center) {
             adjusted_input = 0;
@@ -1126,12 +1125,12 @@ void setInput()
         // 如果比例制动未激活，映射输入值
         if (full_brake_active == 0) {
             // 反向限制油门
-            adjusted_input = map(newinput, 0, 1000 - (servo_dead_band << 1), 1000, 47);
+            adjusted_input = map(filter_newinput, 0, 1000 - (servo_dead_band << 1), 1000, 47);
         }
     }    
     
     // 中心区域（死区）
-    if (newinput >= (1000 - (servo_dead_band << 1)) && newinput <= (1000 + (servo_dead_band << 1))) {
+    if (filter_newinput >= (1000 - (servo_dead_band << 1)) && filter_newinput <= (1000 + (servo_dead_band << 1))) {
         adjusted_input = 0;
         // 如果比例制动激活，重置状态
         if (full_brake_active) {
@@ -1139,8 +1138,9 @@ void setInput()
             return_to_center = 1;
         }
         // 增加中心死区停留计时器（1秒后允许自由选择方向）
-        if (center_deadband_timer < CENTER_DEADBAND_DELAY) {
-            center_deadband_timer++;
+        uint32_t current_time = UTILITY_TIMER->cval;
+        if (current_time > center_last_timer) {
+            center_deadband_timer += current_time - center_last_timer;
         }
         // 在中心等待1秒后，清除返回中心标志（允许任意方向运行）
         if (return_to_center && center_deadband_timer >= CENTER_DEADBAND_DELAY) {
@@ -1148,6 +1148,8 @@ void setInput()
             // 回到中位才能开始正弦波
             sine_from_zero_ok = 1;
         }
+
+        center_last_timer = current_time;
     } else {
         // 离开中心死区，如果不需要返回中心则重置计时器
         if (return_to_center == 0) {
@@ -1192,7 +1194,7 @@ void setInput()
     }
 
     if (!stepper_sine && armed) {
-        if (input >= 47 + (80 * eepromBuffer.use_sine_start)) {
+        if (input >= 47 && sine_from_zero_ok == 0) {
             if (running == 0) {
                 // 准备启动电机
                 allOff();
@@ -1206,107 +1208,71 @@ void setInput()
                 last_duty_cycle = min_startup_duty;
             }
 
-            // 根据正弦启动模式设置占空比
-            if (eepromBuffer.use_sine_start) {
-                duty_cycle_setpoint = map(input, 137, 2047, minimum_duty_cycle+40, 2000);
-            } else {
-                duty_cycle_setpoint = map(input, 47, 2047, minimum_duty_cycle, 2000);
-            }
+            duty_cycle_setpoint = map(input, 47, 2047, minimum_duty_cycle, 2000);
+        } else {
+            // 修复 0 油门没停转
+            duty_cycle_setpoint = 0;
         }
-
-        if (input < 47 + (80 * eepromBuffer.use_sine_start)) {
-            // 非互补PWM模式
-            if (!eepromBuffer.comp_pwm) {
-                // 设置占空比为0
-                duty_cycle_setpoint = 0;
-                if (!running) {
-                    // 重置状态
-                    old_routine = 1;
-                    zero_crosses = 0;
-                    // 处理停止时的制动
-                    if (eepromBuffer.brake_on_stop) {
-                        fullBrake();
-                    } else {
-                        if (!prop_brake_active) {
-                            allOff();
-                        }
-                    }
-                }
-                // RC车模式下的比例制动
-                if (eepromBuffer.rc_car_reverse && prop_brake_active) {
-#ifndef PWM_ENABLE_BRIDGE
-                    // 根据输入类型计算比例制动占空比
-                    if (dshot == 0) prop_brake_duty_cycle = (getAbsDif(1000, newinput) + 1000);
-                    if (dshot)  {
-                        if (newinput <= 1047 && newinput > 47) prop_brake_duty_cycle = ((newinput - 48) * 2 + 47) - reversing_dead_band;
-                        if (newinput > 1047) prop_brake_duty_cycle = ((newinput - 1048) * 2 + 47) - reversing_dead_band;
-                    }
-                    // 根据占空比选择完全制动或比例制动
-                    if (prop_brake_duty_cycle >= (1999)) {
-                        fullBrake();
-                    } else {
-                        proportionalBrake();
-                    }
-#endif
-                }
+        
+        // 回到中位才允许进入 sine_start 模式
+        if ((input < 47 + (150 * eepromBuffer.use_sine_start)) && (sine_from_zero_ok == 1)) {
+            // 互补PWM模式
+            if (full_brake_active) {
+                fullBrake();
             } else {
+                allOff();
+            }
+
+            // 互补PWM模式
+            if (!running) {
+                // 重置状态
+                old_routine = 1;
+                zero_crosses = 0;
+                bad_count = 0;
+                // 处理停止时的制动
                 if (full_brake_active) {
-                    fullBrake();
+                    if (!eepromBuffer.use_sine_start) {
+                        // // 根据拖拽制动强度设置比例制动占空比
+                        // prop_brake_duty_cycle = eepromBuffer.drag_brake_strength * 200;
+                        // // 根据占空比选择完全制动或比例制动
+                        // if (prop_brake_duty_cycle >= (1999)) {
+                        //     fullBrake();
+                        // } else {
+                        //     proportionalBrake();
+                        //     full_brake_active = 1;
+                        // }
+                        // 直接刹车
+                        fullBrake();
+                    }
                 } else {
                     allOff();
                 }
-
-                // 互补PWM模式
-                if (!running) {
-                    // 重置状态
-                    old_routine = 1;
-                    zero_crosses = 0;
-                    bad_count = 0;
-                    // 处理停止时的制动
-                    if (full_brake_active) {
-                        if (!eepromBuffer.use_sine_start) {
-                            // // 根据拖拽制动强度设置比例制动占空比
-                            // prop_brake_duty_cycle = eepromBuffer.drag_brake_strength * 200;
-                            // // 根据占空比选择完全制动或比例制动
-                            // if (prop_brake_duty_cycle >= (1999)) {
-                            //     fullBrake();
-                            // } else {
-                            //     proportionalBrake();
-                            //     full_brake_active = 1;
-                            // }
-                            // 直接刹车
-                            fullBrake();
-                        }
-                    } else {
-                        allOff();
-                    }
-                    duty_cycle_setpoint = 0;
-                }
-
-                phase_A_position = ((step - 1) * 60) + enter_sine_angle;
-                if (phase_A_position > 359) {
-                    phase_A_position -= 360;
-                }
-                phase_B_position = phase_A_position + 119;
-                if (phase_B_position > 359) {
-                    phase_B_position -= 360;
-                }
-                phase_C_position = phase_A_position + 239;
-                if (phase_C_position > 359) {
-                    phase_C_position -= 360;
-                }
-
-                // 低油门，并且正转，并且从0开始才允许进正弦波
-                if (eepromBuffer.use_sine_start == 1 && sine_from_zero_ok == 1) {
-                    stepper_sine = 1;
-                }
                 duty_cycle_setpoint = 0;
             }
+
+            phase_A_position = ((step - 1) * 60) + enter_sine_angle;
+            if (phase_A_position > 359) {
+                phase_A_position -= 360;
+            }
+            phase_B_position = phase_A_position + 119;
+            if (phase_B_position > 359) {
+                phase_B_position -= 360;
+            }
+            phase_C_position = phase_A_position + 239;
+            if (phase_C_position > 359) {
+                phase_C_position -= 360;
+            }
+
+            // 低油门，并且正转，并且从0开始才允许进正弦波
+            if (eepromBuffer.use_sine_start == 1) {
+                stepper_sine = 1;
+            }
+            duty_cycle_setpoint = 0;
+            
         }
         if (!prop_brake_active) {
             // 启动时的占空比限制：只有在低速启动时才限制，高速失步恢复时不限制
-            // commutation_interval > 2000 表示低速状态
-            if (input >= 47 && (zero_crosses < (uint32_t)(30 >> eepromBuffer.stall_protection)) && commutation_interval > 2000) {
+            if (input >= 47 && (zero_crosses < (uint32_t)(30 >> 1))) {// 早点退出保护
                 if (duty_cycle_setpoint < min_startup_duty) {
                     duty_cycle_setpoint = min_startup_duty;
                 }
@@ -1339,6 +1305,8 @@ void setInput()
             
         }
     }
+
+
 }
 
 /**
@@ -1403,11 +1371,7 @@ void tenKhzRoutine()
                                 }
                             } else {
                                 // 播放arming成功音调
-#ifdef MCU_AT415
-														play_tone_flag = 4;
-#else
-														playInputTune();
-#endif
+                                playInputTune();
                             }
                             
                             // 非伺服PWM和非DShot模式下，禁用RC车反转
@@ -1515,7 +1479,7 @@ void tenKhzRoutine()
             }
             // 计算调整后的占空比（带最小脉冲宽度）
             // 限制最大占空比
-            adjusted_duty_cycle = ((duty_cycle * tim1_arr) / 2200) + 1;
+            adjusted_duty_cycle = ((duty_cycle * tim1_arr) / 2100) + 1;
 
         } else {
             // 非运行状态或输入小于阈值
@@ -1932,7 +1896,6 @@ int main(void)
     }
     
     tim1_arr = TIMER1_MAX_ARR;
-    throttle_max_at_low_rpm = 1000;// 低转速最大油门
 
     playStartupTune();
 
@@ -1987,15 +1950,17 @@ int main(void)
         // uint32_t gatTime = UTILITY_TIMER->cval - last_time;
         // last_time = UTILITY_TIMER->cval;
         
-        // // 每100次 打印waitTime
-        // static uint32_t waitTime_counter = 0;
-        // if (++waitTime_counter >= 100) {
-        //     waitTime_counter = 0;
-        //     // 打印循环时间
+        // 每100次 打印waitTime
+        static uint32_t waitTime_counter = 0;
+        if (++waitTime_counter >= 100) {
+            waitTime_counter = 0;
+            // 打印循环时间
 
-        //     uart_print_number(gatTime);
-        //     uart_print_string("\r\n");
-        // }
+            uart_print_number(newinput);
+            uart_print_string(",");
+            uart_print_number(zero_input_count);
+            uart_print_string("\r\n");
+        }
         
         // COMMUTATION INTERVAL IS 0.5US INCREMENTS
         // 因为120Mhz，60分频，所以计数器1代表0.5us，周期 = 计数值/2，单位us
@@ -2018,7 +1983,7 @@ int main(void)
         RELOAD_WATCHDOG_COUNTER();
 
         if (eepromBuffer.variable_pwm == 1) {      // uses range defined by pwm frequency setting
-            tim1_arr = map(commutation_interval, 96, 300, TIMER1_MAX_ARR >> 2,
+            tim1_arr = map(commutation_interval, 96, 200, TIMER1_MAX_ARR / 2,
                 TIMER1_MAX_ARR);
             // 根据油门调节驱动频率
             // tim1_arr = map(duty_cycle, 100, duty_cycle_maximum, TIMER1_MAX_ARR, TIMER1_MAX_ARR >> 2);
@@ -2055,7 +2020,7 @@ int main(void)
                 uart_print_string("Timeout!\n");
                 NVIC_SystemReset();
             }
-            if (signaltimeout > LOOP_FREQUENCY_HZ << 1) { // 2 second when not armed
+            if (signaltimeout > (0xF0FF)) { // 2 second when not armed
                 allOff();
                 armed = 0;
                 input = 0;
@@ -2177,7 +2142,8 @@ int main(void)
             e_rpm = running * (600000 / e_com_time); // in tens of rpm
             k_erpm = e_rpm / 10; // ecom time is time for one electrical revolution in microseconds
 
-            if (low_rpm_throttle_limit) { // some hardware doesn't need this, its on
+            // 高转速不限制油门了，低转是为了顺利启动
+            if (low_rpm_throttle_limit && k_erpm < 70) { // some hardware doesn't need this, its on
                                           // by default to keep hardware / motors
                                           // protected but can slow down the response
                                           // in the very low end a little.
@@ -2208,9 +2174,9 @@ int main(void)
                 // TODO 测试没有进角
                 // duty_cycle 95% 时，turbo模式开启
                 if (duty_cycle > duty_cycle_maximum * 0.95) {
-                    auto_advance_level = 32;
+                    auto_advance_level = 25;
                 } else {
-                    auto_advance_level = map(duty_cycle, 100, 2000, 0, 2);
+                    auto_advance_level = map(duty_cycle, 100, 2000, 5, 15);
                 }
             }
 
@@ -2229,7 +2195,7 @@ int main(void)
         } else { // stepper sine
             if (input > 48 && armed) {
 
-                if (input > 48 && input < 137) { // sine wave stepper
+                if (input > 48 && input < 150) { // sine wave stepper
 
                     static uint16_t delay_last_time;
                     if (UTILITY_TIMER->cval - delay_last_time > step_delay) {
@@ -2242,7 +2208,7 @@ int main(void)
                             do_once_sinemode = 0;
                         }
                         advanceincrement();
-                        step_delay = map(input, 48, 120, 7000 / eepromBuffer.motor_poles, 810 / eepromBuffer.motor_poles);
+                        step_delay = map(input, 48, 150, 7000 / eepromBuffer.motor_poles, 810 / eepromBuffer.motor_poles);
                         // delayMicros(step_delay);
                         // 用非阻塞方法delay
                         delay_last_time = UTILITY_TIMER->cval;

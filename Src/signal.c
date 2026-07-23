@@ -24,32 +24,23 @@ uint16_t last_high_threshold = 0;
 uint8_t low_calibration_counts = 0;
 uint16_t last_input = 0;
 char output_timer_prescaler;
-uint8_t buffersize = 32;
+uint8_t buffersize = 2;
 uint32_t average_signal_pulse;
 uint8_t average_count;
 uint32_t average_packet_length;
 uint16_t dshot_frametime_high = 50000;
 uint16_t dshot_frametime_low = 0;
 
-void computeMSInput()
-{
-
-    int lastnumber = dma_buffer[0];
-    for (int j = 1; j < 2; j++) {
-
-        if (((dma_buffer[j] - lastnumber) < 1500) && ((dma_buffer[j] - lastnumber) > 0)) { // blank space
-
-            newinput = map((dma_buffer[j] - lastnumber), 243, 1200, 0, 2000);
-            break;
-        }
-        lastnumber = dma_buffer[j];
-    }
-}
-
 void computeServoInput()
 {
-    if (((dma_buffer[1] - dma_buffer[0]) > 800) && ((dma_buffer[1] - dma_buffer[0]) < 2200)) {
-				signaltimeout = 0;
+    // 16位解决定时器溢出情况, 但是数据会抖动不知道为什么，暂时滤掉这个数据
+    if (dma_buffer[1] < dma_buffer[0]) {
+        return;
+    }
+    uint16_t gap = (uint16_t)(dma_buffer[1] - dma_buffer[0]);
+    if ((gap > 800) && (gap < 2200)) {
+        signaltimeout = 0;
+
         if (calibration_required) {
             if (!high_calibration_set) {
                 if (high_calibration_counts == 0) {
@@ -117,70 +108,29 @@ void computeServoInput()
 
 void transfercomplete()
 {
-    if (armed && dshot_telemetry) {
-        if (out_put) {
-            receiveDshotDma();
-            compute_dshot_flag = 2;
-            return;
-        } else {
-            sendDshotDma();
-            compute_dshot_flag = 1;
-            return;
-        }
-    }
-
     if (inputSet == 0) {
         detectInput();
-        // receiveDshotDma();
-        // 重新启动DMA（不调用receiveDshotDma避免cval=0影响PB5）
-        INPUT_DMA_CHANNEL->dtcnt = buffersize;
-        INPUT_DMA_CHANNEL->ctrl = 0x98b;
+        receiveDshotDma();
         return;
     }
-    if (inputSet == 1) {
 
-        if (dshot_telemetry) {
-            if (out_put) {
-                make_dshot_package(e_com_time);
-                computeDshotDMA();
-                receiveDshotDma();
-                return;
-            } else {
-                sendDshotDma();
-                return;
-            }
+    if (getInputPinState()) {
+        // 如果意外捕获到高电平，需要多一次沿边，这次就不解析数据，为了让下次走完整个周期
+        buffersize = 3;
+    } else {
+        buffersize = 2;
+        computeServoInput();
+    }
+    // 重新启动DMA（不调用receiveDshotDma避免cval=0影响PB5）
+    INPUT_DMA_CHANNEL->dtcnt = buffersize;
+    INPUT_DMA_CHANNEL->ctrl = 0x98b;
+
+    if (!armed) {
+        if (adjusted_input == 0 && calibration_required == 0) { // note this in input..not newinput so it
+                                                                // will be adjusted be main loop
+            zero_input_count++;
         } else {
-
-            if (dshot == 1) {
-                computeDshotDMA();
-                receiveDshotDma();
-            }
-            if (servoPwm == 1) {
-                if (getInputPinState()) {
-                    buffersize = 3;
-                } else {
-                    buffersize = 2;
-                    computeServoInput();
-                }
-                // 重新启动DMA（不调用receiveDshotDma避免cval=0影响PB5）
-                INPUT_DMA_CHANNEL->dtcnt = buffersize;
-                INPUT_DMA_CHANNEL->ctrl = 0x98b;
-            }
-        }
-        if (!armed) {
-            if (dshot && (average_count < 8) && (zero_input_count > 5)) {
-                average_count++;
-                average_packet_length = average_packet_length + (uint16_t)(dma_buffer[31] - dma_buffer[0]);
-                if (average_count == 8) {
-                    dshot_frametime_high = (average_packet_length >> 3) + (average_packet_length >> 7);
-                    dshot_frametime_low = (average_packet_length >> 3) - (average_packet_length >> 7);
-                }
-            }
-            if (adjusted_input == 0 && calibration_required == 0) { // note this in input..not newinput so it
-                                                                    // will be adjusted be main loop
-                zero_input_count++;
-            } else {
-              if(!eepromBuffer.disable_stick_calibration){
+            if(!eepromBuffer.disable_stick_calibration){
                 zero_input_count = 0;
                 if (adjusted_input > 1500) {
                     if (getAbsDif(adjusted_input, last_input) > 50) {
@@ -196,47 +146,8 @@ void transfercomplete()
                     }
                     last_input = adjusted_input;
                 }
-              }
             }
         }
-    }
-}
-
-void checkDshot()
-{
-    if ((smallestnumber >= 1) && (smallestnumber < 4) && (average_signal_pulse < 60)) {
-        ic_timer_prescaler = 0;
-        if (CPU_FREQUENCY_MHZ > 100) {
-            output_timer_prescaler = 1;
-        } else {
-            output_timer_prescaler = 0;
-        }
-        //	dshot_runout_timer = 1000;
-        dshot = 1;
-        buffer_padding = 14;
-        buffersize = 32;
-        inputSet = 1;
-    }
-    if ((smallestnumber >= 4) && (smallestnumber <= 8) && (average_signal_pulse < 100)) {
-        dshot = 1;
-        ic_timer_prescaler = 1;
-        if (CPU_FREQUENCY_MHZ > 100) {
-            output_timer_prescaler = 3;
-        } else {
-            output_timer_prescaler = 1;
-        }
-        buffer_padding = 7;
-        buffersize = 32;
-        inputSet = 1;
-    }
-}
-void checkServo()
-{
-    if (smallestnumber > 200 && smallestnumber < 20000) {
-        servoPwm = 1;
-        ic_timer_prescaler = CPU_FREQUENCY_MHZ - 1;
-        buffersize = 2;
-        inputSet = 1;
     }
 }
 
@@ -256,15 +167,9 @@ void detectInput()
     }
     average_signal_pulse = average_signal_pulse / 32;
 
-    if (dshot == 1) {
-        checkDshot();
-    }
-    if (servoPwm == 1) {
-        checkServo();
-    }
-
-    if (!dshot && !servoPwm) {
-        checkDshot();
-        checkServo();
+    if (smallestnumber > 200 && smallestnumber < 20000) {
+        servoPwm = 1;
+        buffersize = 2;
+        inputSet = 1;
     }
 }

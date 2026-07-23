@@ -125,7 +125,7 @@ void sensor_processor_update_pwm_input(void) {
         pwm2_data_ready = 0;
     }
     // 感度，从原来电流读取 TODO 可以滤波重一点
-    sensor_data.gain = 3.0f * smoothed_raw_current / 4096.0f;
+    sensor_data.gain = 3.0f * smoothed_raw_current / 4096.0f + 0.1f;
 }
 
 // TODO 看下循环时间耗时
@@ -138,8 +138,7 @@ void sensor_processor_calculate(void) {
     
     // 误差 = 手轮 - 陀螺仪 - 中间值
     int32_t input = map_pwm_to_slider(sensor_data.pwm_high_time, eepromBuffer.gyro.servo_range_a, eepromBuffer.gyro.servo_mid, eepromBuffer.gyro.servo_range_b, 30);
-    float effective_gain = (sensor_data.gain > 0.01f) ? sensor_data.gain : 1.0f;
-    float error = input / effective_gain - sensor_data.gyro_z_dps - sensor_data.slider;
+    float error = input / sensor_data.gain - sensor_data.gyro_z_dps - sensor_data.slider;
     
     // 积分项
     sensor_data.integral += 10.0f * gap_time / 1000000 * error;
@@ -157,7 +156,7 @@ void sensor_processor_calculate(void) {
     sensor_data.slider = 0.8f * filtered_error + sensor_data.integral;
 
     // 输出，映射回去
-    int32_t output_pwm_value = sensor_data.slider * effective_gain;
+    int32_t output_pwm_value = sensor_data.slider * sensor_data.gain;
     // TODO 测试gain 设置1
     // int32_t output_pwm_value = sensor_data.slider;
     if (output_pwm_value > 0) {
@@ -168,25 +167,25 @@ void sensor_processor_calculate(void) {
 
     // 串口输出：pwm_high_time, gyro_z_dps, output_pwm_value （CSV逗号分隔，gyro保留2位小数）
     // 每100次输出一次，避免串口阻塞影响控制频率
-    static uint16_t uart_print_cnt = 0;
-    if (++uart_print_cnt >= 100) {
-        uart_print_cnt = 0;
-        uart_print_number((int32_t)sensor_data.pwm_high_time);
-        uart_print_char(',');
-        uart_print_number((int32_t)output_pwm_value);
-        uart_print_char(',');
-        {
-            float g = sensor_data.gain;
-            int32_t gi = (int32_t)g;
-            int32_t gf = (int32_t)((g - (float)gi) * 100.0f);
-            if (gf < 0) gf = -gf;
-            uart_print_number(gi);
-            uart_print_char('.');
-            if (gf < 10) uart_print_char('0');
-            uart_print_number(gf);
-        }
-        uart_print_string("\r\n");
-    }
+    // static uint16_t uart_print_cnt = 0;
+    // if (++uart_print_cnt >= 100) {
+    //     uart_print_cnt = 0;
+    //     uart_print_number((int32_t)sensor_data.pwm_high_time);
+    //     uart_print_char(',');
+    //     uart_print_number((int32_t)output_pwm_value);
+    //     uart_print_char(',');
+    //     {
+    //         float g = sensor_data.gain;
+    //         int32_t gi = (int32_t)g;
+    //         int32_t gf = (int32_t)((g - (float)gi) * 100.0f);
+    //         if (gf < 0) gf = -gf;
+    //         uart_print_number(gi);
+    //         uart_print_char('.');
+    //         if (gf < 10) uart_print_char('0');
+    //         uart_print_number(gf);
+    //     }
+    //     uart_print_string("\r\n");
+    // }
 
     last_calculate_time = this_calculate_time;
     loop_time = gap_time;

@@ -38,7 +38,7 @@ void changeToInput()
     tmr_reset(IC_TIMER_REGISTER);
     IC_TIMER_REGISTER->cm1 = 0x41;
     IC_TIMER_REGISTER->cctrl = 0xB;
-    IC_TIMER_REGISTER->div = ic_timer_prescaler;
+    IC_TIMER_REGISTER->div = 119;// 固定分频系数
     IC_TIMER_REGISTER->pr = 0xFFFF;
     IC_TIMER_REGISTER->swevt_bit.ovfswtr = TRUE;
     out_put = 0;

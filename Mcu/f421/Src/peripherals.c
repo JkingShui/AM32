@@ -151,6 +151,7 @@ void TIM1_Init(void)
 
     tmr_period_buffer_enable(TMR1, TRUE);
     TMR1->brk_bit.dtc = DEAD_TIME;
+    TMR1->brk_bit.dtc = 0x7f;//   TODO 测试互补 pwm多一点死区
     crm_periph_clock_enable(CRM_GPIOA_PERIPH_CLOCK, TRUE);
     crm_periph_clock_enable(CRM_GPIOB_PERIPH_CLOCK, TRUE);
 
@@ -326,21 +327,18 @@ void UN_TIM_Init(void)
     NVIC_SetPriority(IC_DMA_IRQ_NAME, 1);
     NVIC_EnableIRQ(IC_DMA_IRQ_NAME);
 
-    // 统一TIM3配置 (div=16, pr=0xFFFF)
     IC_TIMER_REGISTER->pr = 0xFFFF;
-    IC_TIMER_REGISTER->div = 16;
     IC_TIMER_REGISTER->ctrl1_bit.prben = TRUE;
 
     // CH1输入捕获配置（PB4油门）
     IC_TIMER_REGISTER->cm1_input_bit.c1c = 0x1;         // CH1直接映射
     IC_TIMER_REGISTER->cm1_input_bit.c1idiv = 0x0;      // CH1不分频
     IC_TIMER_REGISTER->cm1_input_bit.c1df = 0x0A;       // CH1输入滤波：8个采样周期
-    IC_TIMER_REGISTER->cctrl = 0xB;                      // CH1输入捕获使能+上升沿触发
+    IC_TIMER_REGISTER->cctrl = 0xB;                      // CH1输入捕获使能+双边沿触发
 
     IC_TIMER_REGISTER->ctrl1_bit.tmren = TRUE;
     IC_TIMER_REGISTER->iden |= TMR_C1_DMA_REQUEST;// 使能定时器 1 通道 1 的 DMA 请求
     IC_TIMER_REGISTER->swevt_bit.ovfswtr = TRUE;
-
 
 
     // PB5转向输入配置 (TIM3_CH2 + 中断方式)

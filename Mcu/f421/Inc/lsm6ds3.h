@@ -9,8 +9,12 @@ extern "C" {
 // TODO 缩放不对
 #define GYRO_SCALE 0.2f
 
-#define LSM6DS3_I2C_ADDR    (0x6A << 1)
-#define LSM6DS3_WHO_AM_I_VALUE    0x6A
+// #define LSM6DS3_I2C_ADDR    (0x6A << 1)
+// #define LSM6DS3_WHO_AM_I_VALUE    0x6A
+
+// 开发板
+#define LSM6DS3_I2C_ADDR    (0x6B << 1)
+#define LSM6DS3_WHO_AM_I_VALUE    0x69
 
 #define LSM6DS3_WHO_AM_I    0x0F
 #define LSM6DS3_CTRL1_XL    0x10

@@ -125,10 +125,7 @@ void DMA1_Channel5_4_IRQHandler(void)
     }
     // 通道4半传输完成
     if (dma_flag_get(DMA1_HDT4_FLAG) == SET) {
-        if (servoPwm) {
-            IC_TIMER_REGISTER->cctrl_bit.c1p = TMR_INPUT_FALLING_EDGE;
-            DMA1->clr = DMA1_HDT4_FLAG;// 清除通道 4 的半数据传输标志
-        }
+        DMA1->clr = DMA1_HDT4_FLAG;// 清除通道 4 的半数据传输标志
     }
     // 通道4完整传输完成
     if (dma_flag_get(DMA1_FDT4_FLAG) == SET) {

@@ -44,6 +44,7 @@
 #define NOTE_C6  24     // 1046.50 Hz
 #define NOTE_D6  21     // 1174.66 Hz
 #define NOTE_DS6 19     // 1244.51 Hz (D#6)
+#define NOTE_E6  17     // 1318.56 Hz
 
 // 节拍定义 (基于 150 BPM，增大值减慢速度)
 #define NOTE_SIXTEENTH   40    // 十六分音符 (约160ms)
@@ -68,56 +69,16 @@ uint8_t beep_volume;
 
 // 用户自定义旋律 (b=150, o=5, d=16)
 const MelodyNote my_melody[] = {
-    {NOTE_C5,  NOTE_SIXTEENTH},  // c5
-    {REST,     NOTE_SIXTEENTH},  // p
     {NOTE_G5,  NOTE_SIXTEENTH},  // g5
     {REST,     NOTE_SIXTEENTH},  // p
-    {NOTE_C6,  NOTE_SIXTEENTH},  // c6
-    {REST,     NOTE_SIXTEENTH},  // p
-    {NOTE_DS6, NOTE_SIXTEENTH},  // d#6
-    {REST,     NOTE_SIXTEENTH},  // p
-    {REST,     NOTE_EIGHTH},     // 8p
-    {NOTE_C6,  NOTE_SIXTEENTH},  // c6
-    {REST,     NOTE_SIXTEENTH},  // p
-    {REST,     NOTE_EIGHTH},     // 8p
-    {NOTE_B5,  NOTE_SIXTEENTH},  // b5
+    {NOTE_A5,  NOTE_SIXTEENTH},  // a5
     {REST,     NOTE_SIXTEENTH},  // p
     {NOTE_C6,  NOTE_SIXTEENTH},  // c6
     {REST,     NOTE_SIXTEENTH},  // p
-    {NOTE_D6,  NOTE_SIXTEENTH},  // d6
+    {NOTE_D6, NOTE_SIXTEENTH},  // d6
     {REST,     NOTE_SIXTEENTH},  // p
-    {REST,     NOTE_EIGHTH},     // 8p
-    {NOTE_C6,  NOTE_SIXTEENTH},  // c6
+    {NOTE_E6,     NOTE_SIXTEENTH},     // e6
     {REST,     NOTE_SIXTEENTH},  // p
-    {NOTE_G5,  NOTE_SIXTEENTH},  // g5
-    {REST,     NOTE_SIXTEENTH},  // p
-    {NOTE_DS5, NOTE_SIXTEENTH},  // d#5
-    {REST,     NOTE_SIXTEENTH},  // p
-    {NOTE_C5,  NOTE_SIXTEENTH},  // c5
-    {REST,     NOTE_SIXTEENTH},  // p
-    {NOTE_D5,  NOTE_SIXTEENTH},  // d5
-    {REST,     NOTE_SIXTEENTH},  // p
-    {NOTE_DS5, NOTE_SIXTEENTH},  // d#5
-    {REST,     NOTE_SIXTEENTH},  // p
-    {NOTE_FS5, NOTE_SIXTEENTH},  // f#5
-    {REST,     NOTE_SIXTEENTH},  // p
-    {REST,     NOTE_EIGHTH},     // 8p
-    {NOTE_G5,  NOTE_SIXTEENTH},  // g5
-    {REST,     NOTE_SIXTEENTH},  // p
-    {NOTE_DS5, NOTE_SIXTEENTH},  // d#5
-    {REST,     NOTE_SIXTEENTH},  // p
-    {NOTE_C5,  NOTE_SIXTEENTH},  // c5
-    {REST,     NOTE_SIXTEENTH},  // p
-    {NOTE_G4,  NOTE_SIXTEENTH},  // g4
-    {REST,     NOTE_SIXTEENTH},  // p
-    {NOTE_B4,  NOTE_SIXTEENTH},  // b4
-    {REST,     NOTE_SIXTEENTH},  // p
-    {NOTE_C5,  NOTE_SIXTEENTH},  // c5
-    {REST,     NOTE_SIXTEENTH},  // p
-    {NOTE_D5,  NOTE_SIXTEENTH},  // d5
-    {REST,     NOTE_SIXTEENTH},  // p
-    {REST,     NOTE_EIGHTH},     // 8p
-    {NOTE_C5,  NOTE_SIXTEENTH},  // c5
     {0, 0}                       // 结束标记
 };
 
@@ -367,11 +328,11 @@ void playInputTune()
     RELOAD_WATCHDOG_COUNTER();
     setCaptureCompare();
     comStep(3);
-    SET_PRESCALER_PWM(80);
+    SET_PRESCALER_PWM(100);
     delayMillis(100);
     SET_PRESCALER_PWM(0);
     delayMillis(100);
-    SET_PRESCALER_PWM(80);
+    SET_PRESCALER_PWM(100);
     delayMillis(100);
     allOff();
     SET_PRESCALER_PWM(0);
