@@ -151,7 +151,7 @@ void TIM1_Init(void)
 
     tmr_period_buffer_enable(TMR1, TRUE);
     TMR1->brk_bit.dtc = DEAD_TIME;
-    TMR1->brk_bit.dtc = 0x7f;//   TODO 测试互补 pwm多一点死区
+    // TMR1->brk_bit.dtc = 0x7f;//   TODO 测试互补 pwm多一点死区
     crm_periph_clock_enable(CRM_GPIOA_PERIPH_CLOCK, TRUE);
     crm_periph_clock_enable(CRM_GPIOB_PERIPH_CLOCK, TRUE);
 

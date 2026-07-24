@@ -320,7 +320,7 @@ uint32_t start_process = 0;
 uint16_t one_khz_loop_counter = 0;
 uint32_t center_last_timer = 0;
 uint32_t center_deadband_timer = 0;  // 中心死区停留计时器（用于方向切换延迟）
-#define CENTER_DEADBAND_DELAY 1000000 // 中心死区停留延迟（单位：us）
+#define CENTER_DEADBAND_DELAY 800000 // 中心死区停留延迟（单位：us）
 uint16_t target_e_com_time_high;
 uint16_t target_e_com_time_low;
 uint8_t compute_dshot_flag = 0;
@@ -406,7 +406,7 @@ char lowkv = 0;
 
 uint16_t min_startup_duty = 120;
 uint16_t sin_mode_min_s_d = 120;
-char bemf_timeout = 10;
+char bemf_timeout = 100;// 堵转保护阈值
 
 char startup_boost = 50;
 char reversing_dead_band = 1;
@@ -555,6 +555,9 @@ int16_t pwmSin[] = {
     90, 93, 95, 98, 101, 104, 107, 110, 113, 115, 118, 121, 124, 127, 130,
     133, 136, 140, 143, 146, 149, 152, 155, 158, 161, 164, 167, 171, 174, 177
 };
+
+// 正弦启动油门阈值
+#define SIN_END_INPUT 400
 
 // int sin_divider = 2;
 int16_t phase_A_position;
@@ -784,12 +787,12 @@ void loadEEpromSettings()
       SET_AUTO_RELOAD_PWM(tim1_arr);
     }
     if(eepromBuffer.minimum_duty_cycle < 51 && eepromBuffer.minimum_duty_cycle > 0){
-    minimum_duty_cycle = eepromBuffer.minimum_duty_cycle * 10;
+        minimum_duty_cycle = eepromBuffer.minimum_duty_cycle * 10;
     }else{
-    minimum_duty_cycle = 0;
+        minimum_duty_cycle = 0;
     }
     if (eepromBuffer.startup_power < 151 && eepromBuffer.startup_power > 49) {
-            min_startup_duty = minimum_duty_cycle + eepromBuffer.startup_power;
+        min_startup_duty = minimum_duty_cycle + eepromBuffer.startup_power;
     } else {
         min_startup_duty = minimum_duty_cycle;
     }
@@ -830,28 +833,7 @@ void loadEEpromSettings()
             eepromBuffer.driving_brake_strength = 10;
         }
 
-        if(eepromBuffer.driving_brake_strength < 10){
-            dead_time_override = DEAD_TIME + (150 - (eepromBuffer.driving_brake_strength * 10));
-            if (dead_time_override > 200) {
-                dead_time_override = 200;
-            }
-        min_startup_duty = min_startup_duty + dead_time_override;
-        minimum_duty_cycle = minimum_duty_cycle + dead_time_override;
-        throttle_max_at_low_rpm = throttle_max_at_low_rpm + dead_time_override;
-        startup_max_duty_cycle = startup_max_duty_cycle + dead_time_override;
-#ifdef STMICRO
-        TIM1->BDTR |= dead_time_override;
-#endif
-#ifdef ARTERY
-        TMR1->brk |= dead_time_override;
-#endif
-#ifdef GIGADEVICES
-        TIMER_CCHP(TIMER0) |= dead_time_override;
-#endif
-#ifdef WCH
-            TIM1->BDTR |= dead_time_override;
-#endif
-        }
+       
         if (eepromBuffer.limits.temperature < 70 || eepromBuffer.limits.temperature > 140) {
             eepromBuffer.limits.temperature = 255;
         }
@@ -1215,7 +1197,7 @@ void setInput()
         }
         
         // 回到中位才允许进入 sine_start 模式
-        if ((input < 47 + (150 * eepromBuffer.use_sine_start)) && (sine_from_zero_ok == 1)) {
+        if ((input < 47 + (SIN_END_INPUT * eepromBuffer.use_sine_start)) && (sine_from_zero_ok == 1)) {
             // 互补PWM模式
             if (full_brake_active) {
                 fullBrake();
@@ -1427,21 +1409,6 @@ void tenKhzRoutine()
             PROCESS_ADC_FLAG = 1; // set flag to do new adc read at lower priority
             one_khz_loop_counter = 0;
             
-            
-            // 失速保护调整（用于攀爬车和RC车，不建议多旋翼使用）
-            if (eepromBuffer.stall_protection && running) { // this boosts throttle as the rpm gets lower, for crawlers
-                                               // and rc cars only, do not use for multirotors.
-                // 计算失速保护PID控制器输出并调整失速保护
-                stall_protection_adjust += (doPidCalculations(&stallPid, commutation_interval,
-                                               stall_protect_target_interval));
-                // 限制失速保护调整值范围
-                if (stall_protection_adjust > 150 * 10000) {
-                    stall_protection_adjust = 150 * 10000;
-                }
-                if (stall_protection_adjust <= 0) {
-                    stall_protection_adjust = 0;
-                }
-            }
          
         }
         
@@ -1951,16 +1918,24 @@ int main(void)
         // last_time = UTILITY_TIMER->cval;
         
         // 每100次 打印waitTime
-        static uint32_t waitTime_counter = 0;
-        if (++waitTime_counter >= 100) {
-            waitTime_counter = 0;
-            // 打印循环时间
+        // static uint32_t waitTime_counter = 0;
+        // if (++waitTime_counter >= 100) {
+        //     waitTime_counter = 0;
+        //     // 打印循环时间
 
-            uart_print_number(newinput);
-            uart_print_string(",");
-            uart_print_number(zero_input_count);
-            uart_print_string("\r\n");
-        }
+        //     uart_print_number(input);
+        //     uart_print_string(",");
+        //     uart_print_number(step_delay);
+        //     uart_print_string(",");
+        //     uart_print_number(TMR1->c1dt);
+        //     uart_print_string(",");
+        //     uart_print_number(TMR1->c2dt);
+        //     uart_print_string(",");
+        //     uart_print_number(TMR1->c3dt);
+        //     uart_print_string(",");
+        //     uart_print_number(TMR1->pr);
+        //     uart_print_string("\r\n");
+        // }
         
         // COMMUTATION INTERVAL IS 0.5US INCREMENTS
         // 因为120Mhz，60分频，所以计数器1代表0.5us，周期 = 计数值/2，单位us
@@ -1987,13 +1962,14 @@ int main(void)
                 TIMER1_MAX_ARR);
             // 根据油门调节驱动频率
             // tim1_arr = map(duty_cycle, 100, duty_cycle_maximum, TIMER1_MAX_ARR, TIMER1_MAX_ARR >> 2);
-
-            // 如果是正弦波阶段，驱动频率低一些
-            if (adjusted_input > 30 && adjusted_input < (eepromBuffer.sine_mode_changeover_thottle_level * 20)) {
-                // TODO 频率暂定
-                // tim1_arr = TIM1_AUTORELOAD;
-            }
         }
+        // 如果是正弦波阶段，驱动频率低一些
+        if (stepper_sine) {
+            // TODO 频率暂定
+            tim1_arr = TIMER1_MAX_ARR / 2;
+        }
+        
+
         if (eepromBuffer.variable_pwm == 2) {      // uses automatic range   
           if(average_interval < 250 && average_interval > 100){
             tim1_arr = average_interval * (CPU_FREQUENCY_MHZ/9);
@@ -2052,15 +2028,6 @@ int main(void)
         if (eepromBuffer.use_sine_start && adjusted_input < 160) {
             bemf_timeout_happened = 0;
         }
-
-         
-        if (adjusted_input < 150) { // startup duty cycle should be low enough to not burn motor
-            bemf_timeout = 100;
-        } else {
-            // 高转时也让堵转时间长一些
-            bemf_timeout = 100;
-        }
-        
 #endif
         average_interval = e_com_time / 3;
         if (desync_check && zero_crosses > 10) {
@@ -2176,7 +2143,9 @@ int main(void)
                 if (duty_cycle > duty_cycle_maximum * 0.95) {
                     auto_advance_level = 25;
                 } else {
-                    auto_advance_level = map(duty_cycle, 100, 2000, 5, 15);
+                    // auto_advance_level = map(duty_cycle, 100, 2000, 5, 15);
+                    // 转速进角
+                    auto_advance_level = map(commutation_interval, 96, 1000, 15, 0);
                 }
             }
 
@@ -2195,7 +2164,7 @@ int main(void)
         } else { // stepper sine
             if (input > 48 && armed) {
 
-                if (input > 48 && input < 150) { // sine wave stepper
+                if (input > 48 && input < SIN_END_INPUT) { // sine wave stepper
 
                     static uint16_t delay_last_time;
                     if (UTILITY_TIMER->cval - delay_last_time > step_delay) {
@@ -2207,12 +2176,17 @@ int main(void)
                             allpwm();
                             do_once_sinemode = 0;
                         }
+                        // 由于使用了互补pwm导致正弦启动也有刹车效果，所以需要将所有引脚拉低
+                        allLOWPIN_LOW();
                         advanceincrement();
-                        step_delay = map(input, 48, 150, 7000 / eepromBuffer.motor_poles, 810 / eepromBuffer.motor_poles);
+                        step_delay = map(input, 48, SIN_END_INPUT, 7000 / eepromBuffer.motor_poles, 120 / eepromBuffer.motor_poles);
                         // delayMicros(step_delay);
                         // 用非阻塞方法delay
                         delay_last_time = UTILITY_TIMER->cval;
                         e_rpm = 600 / step_delay; // in hundreds so 33 e_rpm is 3300 actual erpm
+                    } else if (UTILITY_TIMER->cval < delay_last_time) {
+                        // 兼容溢出情况
+                        delay_last_time = UTILITY_TIMER->cval;
                     }
 
                 } else {

@@ -59,6 +59,12 @@ void proportionalBrake()
         PHASE_C_GPIO_LOW);
 }
 
+void allLOWPIN_LOW() {
+    PHASE_A_GPIO_PORT_LOW->LOW_BITREG_OFF = PHASE_A_GPIO_LOW;
+    PHASE_B_GPIO_PORT_LOW->LOW_BITREG_OFF = PHASE_B_GPIO_LOW;
+    PHASE_C_GPIO_PORT_LOW->LOW_BITREG_OFF = PHASE_C_GPIO_LOW;
+}
+
 // void phaseCPWM() {
 //	if (!eepromBuffer.comp_pwm){
 //			gpio_mode_QUICK(PHASE_C_GPIO_PORT_LOW,
