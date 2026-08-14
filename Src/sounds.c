@@ -69,15 +69,15 @@ uint8_t beep_volume;
 
 // 用户自定义旋律 (b=150, o=5, d=16)
 const MelodyNote my_melody[] = {
-    {NOTE_G5,  NOTE_SIXTEENTH},  // g5
+    {NOTE_G5,  NOTE_QUARTER},  // g5
     {REST,     NOTE_SIXTEENTH},  // p
-    {NOTE_A5,  NOTE_SIXTEENTH},  // a5
+    {NOTE_A5,  NOTE_QUARTER},  // a5
     {REST,     NOTE_SIXTEENTH},  // p
-    {NOTE_C6,  NOTE_SIXTEENTH},  // c6
+    {NOTE_C6,  NOTE_QUARTER},  // c6
     {REST,     NOTE_SIXTEENTH},  // p
-    {NOTE_D6, NOTE_SIXTEENTH},  // d6
+    {NOTE_D6, NOTE_QUARTER},  // d6
     {REST,     NOTE_SIXTEENTH},  // p
-    {NOTE_E6,     NOTE_SIXTEENTH},     // e6
+    {NOTE_E6,     NOTE_QUARTER},     // e6
     {REST,     NOTE_SIXTEENTH},  // p
     {0, 0}                       // 结束标记
 };
@@ -332,7 +332,7 @@ void playInputTune()
     delayMillis(100);
     SET_PRESCALER_PWM(0);
     delayMillis(100);
-    SET_PRESCALER_PWM(100);
+    SET_PRESCALER_PWM(80);
     delayMillis(100);
     allOff();
     SET_PRESCALER_PWM(0);

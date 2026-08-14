@@ -380,6 +380,7 @@ uint16_t velocity_count_threshold = 75;
 // 低速限制占空比 TODO 验证
 char low_rpm_throttle_limit = 1;
 
+
 // 转速限制状态变量
 char rpm_limit_active = 0;        // 是否开启转速限制
 char rpm_limit_running = 0;       // 是否正在执行转速跳动
@@ -796,7 +797,7 @@ void loadEEpromSettings()
     } else {
         min_startup_duty = minimum_duty_cycle;
     }
-    startup_max_duty_cycle = minimum_duty_cycle + 400;  
+    startup_max_duty_cycle = minimum_duty_cycle + 250;  // 方案B：盲换相阶段占空比上限~25%
 
     motor_kv = (eepromBuffer.motor_kv * 40) + 20;
     setVolume(2);
@@ -993,7 +994,7 @@ void commutate()
     rising = !rising;
 #endif
     __disable_irq(); // don't let dshot interrupt
-    if (!prop_brake_active) {
+    if (!prop_brake_active && !full_brake_active) {
         comStep(step);
     }
     __enable_irq();
@@ -1062,6 +1063,17 @@ void interruptRoutine()
 void startMotor()
 {
     if (running == 0) {
+        // 转子预对齐（A相+、B相- 通电 30ms）
+        phaseBFLOAT();
+        phaseCLOW();
+        phaseAPWM();
+        SET_DUTY_CYCLE_ALL(min_startup_duty);
+        delayMillis(30);
+        allOff();
+        delayMillis(5);
+        
+        // 原启动逻辑
+        step = 1;
         commutate();
         commutation_interval = 10000;
         SET_INTERVAL_TIMER_COUNT(5000);
@@ -1079,6 +1091,10 @@ void startMotor()
 uint16_t filter_newinput = 0;
 void setInput()
 {
+    // 有有效输入信号时清零超时计数（PWM/DShot/DroneCAN 通用）
+    if (inputSet) {
+        signaltimeout = 0;
+    }
     // 滤波
     filter_newinput = (filter_newinput * 3 + newinput) / 4;
     // 正向输入（大于中心值）
@@ -1413,10 +1429,17 @@ void tenKhzRoutine()
         }
         
         // 油门斜率控制
-        if (ramp_count > ramp_divider) {
+        // 方案B：盲换相阶段(zero_crosses<5)使用更慢的斜率，避免大油门冲击
+        uint8_t effective_ramp_divider = ramp_divider;
+        if (zero_crosses < 5) {
+            effective_ramp_divider = ramp_divider + 10;  // 盲换相阶段分频加倍，斜率减半
+        }
+        if (ramp_count > effective_ramp_divider) {
             ramp_count = 0;
             // 基于零交叉次数和占空比的最大占空比变化
-            if (zero_crosses < 150 || last_duty_cycle < 150) {   
+            if (zero_crosses < 5) {
+                max_duty_cycle_change = 1;  // 盲换相阶段每次最多变化1，强制缓慢上升
+            } else if (zero_crosses < 150 || last_duty_cycle < 150) {
                 max_duty_cycle_change = max_ramp_startup; // 启动时使用较大的斜率
             } else {
                 if (average_interval > 500) {
@@ -1833,7 +1856,8 @@ void epaSetting()
  * 2.看门狗启用
  * 5.flash保护功能 ENABLE_FLASH_PROTECTION done test
  * 6.nvic优先级设置 done test
- * 7.mos开关电路测试
+ * 7.mos开关电路测试 done test
+ * 8.没有检测到信号不要关机
  */
 int main(void)
 {
@@ -1921,19 +1945,17 @@ int main(void)
         // static uint32_t waitTime_counter = 0;
         // if (++waitTime_counter >= 100) {
         //     waitTime_counter = 0;
-        //     // 打印循环时间
 
-        //     uart_print_number(input);
+        //     // 打印A相输出状态（AT32F421使用ODT寄存器读取引脚电平）
+        //     // ODT: 输出数据寄存器，反映引脚实际电平
+        //     // A相低边: PB1, A相高边: PA10
+        //     uart_print_number(GPIOB->odt);
         //     uart_print_string(",");
-        //     uart_print_number(step_delay);
+        //     uart_print_number(GPIOA->odt);
         //     uart_print_string(",");
-        //     uart_print_number(TMR1->c1dt);
+        //     uart_print_number(full_brake_active);
         //     uart_print_string(",");
-        //     uart_print_number(TMR1->c2dt);
-        //     uart_print_string(",");
-        //     uart_print_number(TMR1->c3dt);
-        //     uart_print_string(",");
-        //     uart_print_number(TMR1->pr);
+        //     uart_print_number(running);
         //     uart_print_string("\r\n");
         // }
         
@@ -1966,7 +1988,9 @@ int main(void)
         // 如果是正弦波阶段，驱动频率低一些
         if (stepper_sine) {
             // TODO 频率暂定
-            tim1_arr = TIMER1_MAX_ARR / 2;
+            SET_AUTO_RELOAD_PWM(TIM1_AUTORELOAD);
+        } else {
+            tim1_arr = TIMER1_MAX_ARR;
         }
         
 
@@ -1983,32 +2007,29 @@ int main(void)
         }
         if (signaltimeout > (LOOP_FREQUENCY_HZ >> 1)) { // half second timeout when armed;
             if (armed) {
-                allOff();
-                armed = 0;
-                input = 0;
-                inputSet = 0;
-                zero_input_count = 0;
-                SET_DUTY_CYCLE_ALL(0);
-                resetInputCaptureTimer();
-                for (int i = 0; i < 64; i++) {
-                    dma_buffer[i] = 0;
+                // 信号丢失：停止电机输出，但不重启，等待信号恢复
+                if (signaltimeout == (LOOP_FREQUENCY_HZ >> 1) + 1) {
+                    allOff();
+                    running = 0;
+                    input = 0;
+                    zero_input_count = 0;
+                    SET_DUTY_CYCLE_ALL(0);
+                    // 不清 dma_buffer，不 reset capture 定时器，避免干扰下次 PWM 解析
+                    uart_print_string("Signal lost!\n");
                 }
-                uart_print_string("Timeout!\n");
-                NVIC_SystemReset();
             }
             if (signaltimeout > (0xF0FF)) { // 2 second when not armed
-                allOff();
-                armed = 0;
-                input = 0;
-                inputSet = 0;
-                zero_input_count = 0;
-                SET_DUTY_CYCLE_ALL(0);
-                resetInputCaptureTimer();
-                for (int i = 0; i < 64; i++) {
-                    dma_buffer[i] = 0;
+                // Disarm 只执行一次（signaltimeout == 0xF100），避免每次循环清 dma_buffer/armed
+                if (signaltimeout == 0xF100) {
+                    allOff();
+                    running = 0;
+                    armed = 0;
+                    input = 0;
+                    zero_input_count = 0;
+                    SET_DUTY_CYCLE_ALL(0);
+                    // 不清 dma_buffer，不 reset capture 定时器
+                    uart_print_string("Disarmed!\n");
                 }
-                uart_print_string("Timeout 2!\n");
-                NVIC_SystemReset();
             }
         }
 

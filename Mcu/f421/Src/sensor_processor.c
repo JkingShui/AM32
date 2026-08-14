@@ -168,14 +168,14 @@ void sensor_processor_calculate(void) {
     // 串口输出：pwm_high_time, gyro_z_dps, output_pwm_value （CSV逗号分隔，gyro保留2位小数）
     // 每100次输出一次，避免串口阻塞影响控制频率
     // static uint16_t uart_print_cnt = 0;
-    // if (++uart_print_cnt >= 100) {
+    // if (++uart_print_cnt >= 10) {
     //     uart_print_cnt = 0;
-    //     uart_print_number((int32_t)sensor_data.pwm_high_time);
-    //     uart_print_char(',');
-    //     uart_print_number((int32_t)output_pwm_value);
-    //     uart_print_char(',');
+    //     // uart_print_number((int32_t)sensor_data.pwm_high_time);
+    //     // uart_print_char(',');
+    //     // uart_print_number((int32_t)output_pwm_value);
+    //     // uart_print_char(',');
     //     {
-    //         float g = sensor_data.gain;
+    //         float g = sensor_data.gyro_z_dps;
     //         int32_t gi = (int32_t)g;
     //         int32_t gf = (int32_t)((g - (float)gi) * 100.0f);
     //         if (gf < 0) gf = -gf;

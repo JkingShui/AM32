@@ -19,5 +19,8 @@ void proportionalBrake();
 void twoChannelForward();
 void twoChannelReverse();
 void allLOWPIN_LOW();
+void phaseBFLOAT();
+void phaseCLOW();
+void phaseAPWM();
 
 #endif /* INC_PHASEOUTS_H_ */
