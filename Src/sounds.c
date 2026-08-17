@@ -341,6 +341,27 @@ void playInputTune()
     __enable_irq();
 }
 
+// 关机音效
+void playShotDownTune()
+{
+    __disable_irq();
+    SET_AUTO_RELOAD_PWM(TIM1_AUTORELOAD);
+    RELOAD_WATCHDOG_COUNTER();
+    setCaptureCompare();
+    comStep(3);
+    SET_PRESCALER_PWM(80);
+    delayMillis(100);
+    SET_PRESCALER_PWM(0);
+    delayMillis(100);
+    SET_PRESCALER_PWM(100);
+    delayMillis(100);
+    allOff();
+    SET_PRESCALER_PWM(0);
+    signaltimeout = 0;
+    SET_AUTO_RELOAD_PWM(TIMER1_MAX_ARR);
+    __enable_irq();
+}
+
 void playDefaultTone()
 {
     SET_AUTO_RELOAD_PWM(TIM1_AUTORELOAD);

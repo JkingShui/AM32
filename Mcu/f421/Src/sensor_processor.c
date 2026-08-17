@@ -102,6 +102,11 @@ void sensor_processor_init(void) {
 volatile uint16_t loop_time = 0;
 // TODO 降低更新频率，降低的值还需要确定
 void sensor_processor_update_gyro(void) {
+    // 倒车关闭陀螺仪
+    if (forward == eepromBuffer.dir_reversed) {
+        sensor_data.gyro_z_dps = 0.0f;
+        return;
+    }
     // 定时更新一次
     uint8_t ret = lsm6ds3_read_gyro_z(&sensor_data.gyro_z);
     if(ret == 1)
@@ -141,7 +146,7 @@ void sensor_processor_calculate(void) {
     float error = input / sensor_data.gain - sensor_data.gyro_z_dps - sensor_data.slider;
     
     // 积分项
-    sensor_data.integral += 10.0f * gap_time / 1000000 * error;
+    sensor_data.integral += 6.0f * gap_time / 1000000 * error;
     // 积分项限制
     if (sensor_data.integral > 500) {
         sensor_data.integral = 500;
@@ -153,7 +158,7 @@ void sensor_processor_calculate(void) {
     filtered_error = 0.3 * filtered_error + 0.7 * error;
 
     // pi运算
-    sensor_data.slider = 0.8f * filtered_error + sensor_data.integral;
+    sensor_data.slider = 0.6f * filtered_error + sensor_data.integral;
 
     // 输出，映射回去
     int32_t output_pwm_value = sensor_data.slider * sensor_data.gain;

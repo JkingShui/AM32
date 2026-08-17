@@ -685,7 +685,7 @@ void setEepromParams()
     eepromBuffer.version.major = VERSION_MAJOR;                            // 3  固件主版本号
     eepromBuffer.version.minor = VERSION_MINOR;                            // 4  固件次版本号
     eepromBuffer.max_ramp = 95;                                            // 5  最大油门斜率（80→8%/ms，0.1%/ms步长）
-    eepromBuffer.minimum_duty_cycle = 20;                                   // 6  最小占空比（2→约0.4%，步长0.2%）
+    eepromBuffer.minimum_duty_cycle = 10;                                   // 6  最小占空比（2→约0.4%，步长0.2%）
     eepromBuffer.disable_stick_calibration = 1;                            // 7  禁用摇杆校准（0=启用校准）
     eepromBuffer.absolute_voltage_cutoff = 12;                             // 8  绝对电压截止（12→6.0V，步长0.5V）
     eepromBuffer.current_P = 100;                                          // 9  电流PID的P
@@ -732,7 +732,7 @@ void setEepromParams()
     eepromBuffer.driving_brake_strength = 10;                              // 42 行车制动强度（80%，刹车力度）
     eepromBuffer.limits.temperature = 60;                                  // 43 温度限制（60°C）
     eepromBuffer.limits.current = 102;                                      // 44 电流限制（80A）
-    eepromBuffer.sine_mode_power = 8;                                     // 45 正弦模式功率（80%）
+    eepromBuffer.sine_mode_power = 9;                                     // 45 正弦模式功率（80%）
     eepromBuffer.input_type = 2;                                           // 46 输入类型（0=标准PWM舵机信号）
     eepromBuffer.auto_advance = 1;                                         // 47 自动提前角（1=开启，随转速自动跟踪）
 
@@ -2078,6 +2078,8 @@ int main(void)
                 button_hold_count++;
                 if (button_hold_count >= BUTTON_HOLD_SHUTDOWN_COUNT && !is_shutdown) {
                     led_blink_fast(3, 100);
+                    //音效
+                    playShotDownTune();
                     mos_button_set(0);
                     // 加一个关机检测，防止按键不释放一直重复关机
                     is_shutdown = TRUE;
@@ -2200,7 +2202,7 @@ int main(void)
                         // 由于使用了互补pwm导致正弦启动也有刹车效果，所以需要将所有引脚拉低
                         allLOWPIN_LOW();
                         advanceincrement();
-                        step_delay = map(input, 48, SIN_END_INPUT, 7000 / eepromBuffer.motor_poles, 120 / eepromBuffer.motor_poles);
+                        step_delay = map(input, 48, SIN_END_INPUT, 4000 / eepromBuffer.motor_poles, 120 / eepromBuffer.motor_poles);
                         // delayMicros(step_delay);
                         // 用非阻塞方法delay
                         delay_last_time = UTILITY_TIMER->cval;
@@ -2223,11 +2225,17 @@ int main(void)
                         stepper_sine = 0;
                         running = 1;
                         old_routine = 1;
-                        commutation_interval = 9000;
-                        average_interval = 9000;
+                        // 正弦→六步转速平滑衔接：
+                        // 正弦：step_delay µs = 每 1° 电角度的时间
+                        // 六步：commutation_interval µs = 每 60° 电角度（一步）的时间
+                        // 换算：commutation_interval = 60 × step_delay
+                        uint32_t matched_interval = (uint32_t)step_delay * 60UL;
+                        if (matched_interval > 60000UL) matched_interval = 60000UL;  // 安全上限
+                        commutation_interval = (uint16_t)matched_interval;
+                        average_interval = (uint16_t)matched_interval;
                         last_average_interval = average_interval;
-                        SET_INTERVAL_TIMER_COUNT(9000);
-                        zero_crosses = 20;
+                        SET_INTERVAL_TIMER_COUNT((uint16_t)matched_interval);
+                        zero_crosses = 10;
                         prop_brake_active = 0;
                         step = changeover_step;
                         // comStep(step);// rising bemf on a same as position 0.
